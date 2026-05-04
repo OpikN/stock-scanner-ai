@@ -49,22 +49,17 @@ def send(msg):
 # DOWNLOAD
 # ==============================
 def get_data(symbol):
-    for i in range(3):
+    for _ in range(3):
         try:
             df = yf.download(symbol, period="6mo", interval="1d", progress=False, threads=False)
-
             if df is None or df.empty:
                 time.sleep(2)
                 continue
-
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
-
             return df
-
         except:
             time.sleep(2)
-
     return None
 
 # ==============================
@@ -114,16 +109,16 @@ def signal(df, mode):
 
     rr = abs((tp - price) / (price - sl)) if sig == "BUY" else abs((price - tp) / (sl - price))
 
-    confidence = "LOW"
+    conf = "LOW"
     if adx > 25 and rr >= 1.5:
-        confidence = "HIGH"
+        conf = "HIGH"
     elif adx > 20:
-        confidence = "MEDIUM"
+        conf = "MEDIUM"
 
-    return sig, price, sl, tp, adx, confidence
+    return sig, price, sl, tp, adx, conf
 
 # ==============================
-# POSITION SIZE (IDX FIX)
+# POSITION SIZE
 # ==============================
 def calc_lot(equity, entry, sl):
     risk_value = equity * RISK_PER_TRADE
@@ -136,9 +131,29 @@ def calc_lot(equity, entry, sl):
     lot = int(shares / 100)
 
     max_lot = int(equity / (entry * 100))
-    lot = min(lot, max_lot)
+    return max(min(lot, max_lot), 0)
 
-    return max(lot, 0)
+# ==============================
+# CORRELATION FILTER
+# ==============================
+def correlation_filter(data_map, selected, candidate, threshold=0.8):
+    if not selected:
+        return True
+
+    df_cand = data_map[candidate]["Close"]
+
+    for s in selected:
+        df_sel = data_map[s]["Close"]
+        min_len = min(len(df_sel), len(df_cand))
+
+        if min_len < 30:
+            continue
+
+        corr = df_sel[-min_len:].corr(df_cand[-min_len:])
+        if corr > threshold:
+            return False
+
+    return True
 
 # ==============================
 # BACKTEST PORTFOLIO
@@ -151,8 +166,6 @@ def backtest_portfolio(df, mode):
     trades = []
 
     for i in range(60, len(df)):
-
-        # drawdown control
         drawdown = (equity - peak) / peak
         if drawdown <= -MAX_DRAWDOWN:
             break
@@ -162,7 +175,6 @@ def backtest_portfolio(df, mode):
         sub = df.iloc[:i]
         sig, entry, sl, tp, _, _ = signal(sub, mode)
 
-        # entry
         if sig != "HOLD" and len(active) < MAX_POSITIONS:
             lot = calc_lot(equity, entry, sl)
             if lot > 0:
@@ -174,7 +186,6 @@ def backtest_portfolio(df, mode):
                     "lot": lot
                 })
 
-        # manage
         new_active = []
 
         for pos in active:
@@ -227,21 +238,26 @@ def run():
     mode = state["mode"]
 
     rows = []
+    data_map = {}
 
     for s in STOCKS:
         df = get_data(s)
-
         if df is None or len(df) < 50:
             continue
 
         df = compute(df)
+        data_map[s] = df
 
         sig, entry, sl, tp, adx, conf = signal(df, mode)
         winrate, trades, final_cap = backtest_portfolio(df, mode)
-
         lot = calc_lot(CAPITAL_INIT, entry, sl)
 
-        score = winrate * 0.6 + trades * 2
+        score = (
+            winrate * 0.5 +
+            trades * 1.5 +
+            adx * 0.3 +
+            (10 if conf == "HIGH" else 5 if conf == "MEDIUM" else 0)
+        )
 
         rows.append({
             "Stock": s,
@@ -279,26 +295,38 @@ def run():
     df = df[df["Confidence"] != "LOW"]
     df = df[df["Winrate"] >= 50]
 
-    if df.empty:
-        df = pd.DataFrame(rows).sort_values("Score", ascending=False)
-        label = "ALTERNATIF"
-    else:
-        df = df.sort_values("Score", ascending=False)
-        label = "REAL SIGNAL"
+    df = df.sort_values("Score", ascending=False)
 
-    top = df.head(3)
+    # smart portfolio
+    selected = []
+    portfolio = []
+
+    for _, row in df.iterrows():
+        stock = row["Stock"]
+
+        if len(portfolio) >= MAX_POSITIONS:
+            break
+
+        if correlation_filter(data_map, selected, stock):
+            portfolio.append(row)
+            selected.append(stock)
+
+    top = pd.DataFrame(portfolio)
+
+    label = "REAL SIGNAL" if not top.empty else "ALTERNATIF"
 
     # telegram
-    msg = f"🤖 MODE: {state['mode']} | {label}\n"
-    msg += f"📊 Max Posisi: {MAX_POSITIONS}\n\n🔥 TOP SIGNAL 🔥\n\n"
+    msg = f"🤖 AI PORTFOLIO MODE: {state['mode']} | {label}\n"
+    msg += f"🧠 Smart Allocation Aktif\n"
+    msg += f"📊 Max Posisi: {MAX_POSITIONS}\n\n🔥 TOP PORTFOLIO 🔥\n\n"
 
     for _, r in top.iterrows():
-        capital_used = int(r["Lot"] * r["Entry"] * 100)
+        capital = int(r["Lot"] * r["Entry"] * 100)
 
         msg += (
             f"{r['Stock']} ({r['Signal']})\n"
             f"Entry: {r['Entry']} | SL: {r['SL']} | TP: {r['TP']}\n"
-            f"Lot: {r['Lot']} | Capital: {capital_used}\n"
+            f"Lot: {r['Lot']} | Capital: {capital}\n"
             f"ADX: {r['ADX']} | Conf: {r['Confidence']}\n"
             f"Winrate: {r['Winrate']}% | Trades: {r['Trades']}\n"
             f"Score: {r['Score']}\n\n"
