@@ -42,7 +42,7 @@ def send(msg):
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
 # ==============================
-# SAFE DOWNLOAD (ANTI ERROR)
+# DOWNLOAD (ANTI ERROR)
 # ==============================
 def get_data(symbol):
     for i in range(3):
@@ -75,16 +75,20 @@ def compute(df):
     df["ema50"] = ta.trend.ema_indicator(close, 50)
     df["rsi"]   = ta.momentum.rsi(close, 14)
     df["atr"]   = ta.volatility.average_true_range(df["High"], df["Low"], close, 14)
+    df["adx"]   = ta.trend.adx(df["High"], df["Low"], close, 14)
     return df
 
 # ==============================
-# SIGNAL ADAPTIVE
+# SIGNAL + CONFIDENCE
 # ==============================
 def signal(df, mode):
     r = df.iloc[-1]
-    price = float(r["Close"])
-    ema20, ema50, rsi, atr = r["ema20"], r["ema50"], r["rsi"], r["atr"]
 
+    price = float(r["Close"])
+    ema20, ema50 = r["ema20"], r["ema50"]
+    rsi, atr, adx = r["rsi"], r["atr"], r["adx"]
+
+    # MODE
     if mode == "SAFE":
         rsi_low, rsi_high = 45, 55
         atr_mult = 2.0
@@ -95,13 +99,32 @@ def signal(df, mode):
         rsi_low, rsi_high = 35, 60
         atr_mult = 1.5
 
+    # SIGNAL
     if ema20 > ema50 and rsi_low < rsi < rsi_high:
-        return "BUY", price, price - atr_mult*atr, price + 2*atr
+        sig = "BUY"
+        sl = price - atr_mult * atr
+        tp = price + 2 * atr
 
     elif ema20 < ema50 and rsi_low < rsi < rsi_high:
-        return "SELL", price, price + atr_mult*atr, price - 2*atr
+        sig = "SELL"
+        sl = price + atr_mult * atr
+        tp = price - 2 * atr
 
-    return "HOLD", price, 0, 0
+    else:
+        return "HOLD", price, 0, 0, 0, "LOW"
+
+    # RR
+    rr = abs((tp - price) / (price - sl)) if sig == "BUY" else abs((price - tp) / (sl - price))
+
+    # CONFIDENCE
+    confidence = "LOW"
+
+    if adx > 25 and rr >= 1.5:
+        confidence = "HIGH"
+    elif adx > 20:
+        confidence = "MEDIUM"
+
+    return sig, price, sl, tp, adx, confidence
 
 # ==============================
 # BACKTEST REAL
@@ -112,7 +135,7 @@ def backtest(df, mode):
 
     for i in range(60, len(df)):
         sub = df.iloc[:i]
-        sig, entry, sl, tp = signal(sub, mode)
+        sig, entry, sl, tp, _, _ = signal(sub, mode)
 
         if sig == "HOLD":
             continue
@@ -172,7 +195,7 @@ def run():
         try:
             df = compute(df)
 
-            sig, entry, sl, tp = signal(df, mode)
+            sig, entry, sl, tp, adx, confidence = signal(df, mode)
             winrate, trades, final_cap = backtest(df, mode)
 
             score = winrate * 0.6 + trades * 2
@@ -183,6 +206,8 @@ def run():
                 "Entry": round(entry,2),
                 "SL": round(sl,2),
                 "TP": round(tp,2),
+                "ADX": round(adx,2),
+                "Confidence": confidence,
                 "Winrate": winrate,
                 "Trades": trades,
                 "Score": round(score,2)
@@ -209,15 +234,27 @@ def run():
 
     save_state(state)
 
-    df = df.sort_values("Score", ascending=False)
+    # FILTER
+    df = df[df["Signal"] != "HOLD"]
+    df = df[df["Confidence"] != "LOW"]
+
+    if df.empty:
+        df = pd.DataFrame(rows).sort_values("Score", ascending=False)
+        mode_label = "ALTERNATIF"
+    else:
+        df = df.sort_values("Score", ascending=False)
+        mode_label = "REAL SIGNAL"
+
     top = df.head(3)
 
-    msg = f"🤖 MODE: {state['mode']}\n\n🔥 TOP SIGNAL 🔥\n\n"
+    # TELEGRAM
+    msg = f"🤖 MODE: {state['mode']} | {mode_label}\n\n🔥 TOP SIGNAL 🔥\n\n"
 
     for _, r in top.iterrows():
         msg += (
             f"{r['Stock']} ({r['Signal']})\n"
             f"Entry: {r['Entry']} | SL: {r['SL']} | TP: {r['TP']}\n"
+            f"ADX: {r['ADX']} | Confidence: {r['Confidence']}\n"
             f"Winrate: {r['Winrate']}% | Trades: {r['Trades']}\n"
             f"Score: {r['Score']}\n\n"
         )
