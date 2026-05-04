@@ -20,7 +20,6 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID   = os.getenv("CHAT_ID")
 
 
-# ===== TELEGRAM =====
 def send(msg):
     if not BOT_TOKEN or not CHAT_ID:
         print("❌ BOT_TOKEN / CHAT_ID tidak terbaca")
@@ -30,32 +29,25 @@ def send(msg):
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
 
-# ===== MAIN =====
 def run():
     print("🚀 START SCANNER")
 
-    # ===== MARKET =====
-    ihsg = get_data(IHSG)
-    if ihsg is None:
-        send("❌ Gagal ambil data IHSG")
+    equity = get_equity()
+
+    # 🔥 STOP SYSTEM kalau equity habis
+    if equity <= 0:
+        send("❌ SYSTEM STOP - Equity habis")
         return
 
-    ihsg = compute(ihsg)
+    ihsg = compute(get_data(IHSG))
     market = get_market_regime(ihsg)
 
     results = []
     log_data = []
     trade_count = 0
 
-    # ===== SCAN =====
     for s in STOCKS:
-        print("SCAN:", s)
-
-        df = get_data(s)
-        if df is None:
-            continue
-
-        df = compute(df)
+        df = compute(get_data(s))
         if df is None or df.empty:
             continue
 
@@ -66,25 +58,21 @@ def run():
 
         strategy = choose_strategy(df)
 
-        # ===== FILTER MARKET =====
         if market == "BULL" and sig == "SELL":
             continue
         if market == "BEAR" and sig == "BUY":
             continue
 
-        # ===== BACKTEST =====
         exit_price, result = run_backtest(df, sig, price)
         if exit_price is None:
             continue
 
-        # ===== RISK MANAGEMENT =====
-        equity = get_equity()
+        # ===== SAFE RISK =====
         sl = price * (1.03 if sig == "SELL" else 0.97)
-        lot = calculate_lot(price, sl, equity, risk_pct=0.02)
+        lot = calculate_lot(price, sl, equity)
 
         pnl = calculate_pnl(price, exit_price, sig, lot)
 
-        # ===== SAVE =====
         trade_data = {
             "Stock": s,
             "Signal": sig,
@@ -108,7 +96,6 @@ def run():
 
         trade_count += 1
 
-    # ===== NO SIGNAL =====
     if trade_count == 0:
         send(f"⚠️ MARKET: {market}\nTidak ada sinyal hari ini")
         return
@@ -122,7 +109,6 @@ def run():
     trades = load_trades()
     exp = get_expectancy(trades)
 
-    # ===== TELEGRAM =====
     msg = f"📊 MARKET: {market}\n\n🔥 SIGNAL 🔥\n\n"
     msg += "\n".join(results)
     msg += f"\n\n📊 STATS:\n{stats}"
