@@ -2,6 +2,7 @@ import os
 import requests
 from core import *
 from logger import save_log, get_stats
+from portfolio import save_trade, calculate_pnl, get_equity, get_performance
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID   = os.getenv("CHAT_ID")
@@ -16,7 +17,6 @@ def send(msg):
 
 
 def run():
-    # MARKET
     ihsg = get_data(IHSG)
     if ihsg is None:
         send("❌ Gagal ambil IHSG")
@@ -52,6 +52,21 @@ def run():
             "Entry": round(price,2)
         })
 
+        # ===== SIMULASI TRADE =====
+        lot = 1
+        exit_price = price * (1.02 if sig == "BUY" else 0.98)
+
+        pnl = calculate_pnl(price, exit_price, sig, lot)
+
+        save_trade({
+            "Stock": s,
+            "Signal": sig,
+            "Entry": round(price,2),
+            "Exit": round(exit_price,2),
+            "Lot": lot,
+            "PnL": round(pnl,2)
+        })
+
     if not results:
         send(f"⚠️ Market: {market}\nTidak ada sinyal")
         return
@@ -62,7 +77,12 @@ def run():
     msg += "\n".join(results)
 
     stats = get_stats()
+    equity = get_equity()
+    perf = get_performance()
+
     msg += f"\n\n📊 STATS:\n{stats}"
+    msg += f"\n\n💰 EQUITY: {int(equity)}"
+    msg += f"\n📈 PERFORMANCE:\n{perf}"
 
     send(msg)
 
