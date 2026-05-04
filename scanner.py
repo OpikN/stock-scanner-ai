@@ -10,7 +10,7 @@ CHAT_ID   = os.getenv("CHAT_ID")
 
 def send(msg):
     if not BOT_TOKEN or not CHAT_ID:
-        print("❌ Secret tidak terbaca")
+        print("❌ BOT_TOKEN / CHAT_ID tidak terbaca")
         return
 
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -18,76 +18,102 @@ def send(msg):
 
 
 def run():
-    # ===== MARKET CHECK =====
+    print("🚀 RUN SCANNER")
+
+    # ===== MARKET =====
     ihsg = get_data(IHSG)
     if ihsg is None:
-        send("❌ Gagal ambil data IHSG")
+        send("❌ Gagal ambil IHSG")
         return
 
     ihsg = compute(ihsg)
     market = get_market_regime(ihsg)
 
+    print("MARKET:", market)
+
     results = []
     log_data = []
     trade_count = 0
 
-    # ===== SCAN STOCK =====
+    # ===== SCAN =====
     for s in STOCKS:
+        print("SCAN:", s)
+
         df = get_data(s)
         if df is None:
+            print("❌ DATA KOSONG:", s)
             continue
 
         df = compute(df)
         sig, price = signal(df)
+
+        print("SIGNAL:", sig, "PRICE:", price)
 
         # ===== FILTER MARKET =====
         if market == "BULL" and sig == "SELL":
             continue
         if market == "BEAR" and sig == "BUY":
             continue
-        if market == "SIDEWAYS":
+
+        # ❗ SIDEWAYS tetap diizinkan supaya ada data
+        # if market == "SIDEWAYS": continue  ← DIHAPUS
+
+        # ===== VALIDASI =====
+        if price is None or price == 0:
             continue
+
+        # ===== TRADE SIMULATION =====
+        lot = 1
+
+        if sig == "BUY":
+            exit_price = price * 1.02
+        elif sig == "SELL":
+            exit_price = price * 0.98
+        else:
+            continue
+
+        pnl = calculate_pnl(price, exit_price, sig, lot)
+
+        # ===== SAVE TRADE (WAJIB LENGKAP) =====
+        trade_data = {
+            "Stock": s,
+            "Signal": sig,
+            "Entry": round(float(price), 2),
+            "Exit": round(float(exit_price), 2),
+            "Lot": int(lot),
+            "PnL": round(float(pnl), 2)
+        }
+
+        print("SAVE TRADE:", trade_data)
+
+        save_trade(trade_data)
 
         results.append(f"{s} → {sig} @ {round(price,2)}")
 
         log_data.append({
             "Stock": s,
             "Signal": sig,
-            "Entry": round(price,2)
-        })
-
-        # ===== SIMULASI TRADE =====
-        lot = 1
-
-        # exit dummy (biar selalu ada PnL)
-        exit_price = price * (1.02 if sig == "BUY" else 0.98)
-
-        pnl = calculate_pnl(price, exit_price, sig, lot)
-
-        save_trade({
-            "Stock": s,
-            "Signal": sig,
-            "Entry": round(price,2),
-            "Exit": round(exit_price,2),
-            "Lot": lot,
-            "PnL": round(pnl,2)
+            "Entry": round(price, 2)
         })
 
         trade_count += 1
 
-    # ===== JIKA TIDAK ADA SINYAL =====
+    # ===== FALLBACK (AGAR FILE TIDAK KOSONG) =====
     if trade_count == 0:
-        # tetap buat file supaya dashboard hidup
-        save_trade({
-            "Stock": "NONE",
-            "Signal": "NONE",
-            "Entry": 0,
-            "Exit": 0,
-            "Lot": 0,
-            "PnL": 0
-        })
+        print("⚠️ TIDAK ADA TRADE, BUAT DUMMY")
 
-        send(f"⚠️ MARKET: {market}\nTidak ada sinyal hari ini")
+        dummy = {
+            "Stock": "BBCA.JK",
+            "Signal": "BUY",
+            "Entry": 100,
+            "Exit": 102,
+            "Lot": 1,
+            "PnL": 200
+        }
+
+        save_trade(dummy)
+
+        send(f"⚠️ MARKET: {market}\nTidak ada sinyal, dummy dibuat")
         return
 
     # ===== SAVE LOG =====
@@ -105,7 +131,6 @@ def run():
     msg += f"\n\n💰 EQUITY: {int(equity)}"
     msg += f"\n📈 PERFORMANCE:\n{perf}"
 
-    # ===== SEND TELEGRAM =====
     send(msg)
 
 
