@@ -61,6 +61,10 @@ def get_equity():
     for t in trades:
         equity += t["PnL"]
 
+    # 🔥 PROTEKSI
+    if equity < 0:
+        equity = 0
+
     return equity
 
 
@@ -72,7 +76,6 @@ def get_performance():
     losses = sum(1 for t in trades if t["PnL"] < 0)
 
     total = len(trades)
-
     winrate = (wins / total * 100) if total > 0 else 0
 
     return f"Trade: {total}\nWin: {wins} | Loss: {losses}\nWinrate: {round(winrate,2)}%"
@@ -98,14 +101,27 @@ def get_expectancy(trades):
     return round(expectancy, 2)
 
 
-# ===== DYNAMIC LOT =====
+# ===== SAFE LOT CALCULATION =====
 def calculate_lot(entry, sl, equity, risk_pct=0.02):
-    risk_amount = equity * risk_pct
+    # max risk per trade
+    max_risk = equity * risk_pct
+
     risk_per_unit = abs(entry - sl)
 
-    if risk_per_unit == 0:
+    if risk_per_unit <= 0:
         return 1
 
-    lot = risk_amount / risk_per_unit
+    # hitung lot (disesuaikan dengan multiplier saham 100)
+    lot = max_risk / (risk_per_unit * 100)
 
-    return max(1, int(lot))
+    lot = int(lot)
+
+    # 🔥 MIN LOT
+    if lot < 1:
+        lot = 1
+
+    # 🔥 HARD LIMIT (ANTI OVERLEVERAGE)
+    if lot > 50:
+        lot = 50
+
+    return lot
