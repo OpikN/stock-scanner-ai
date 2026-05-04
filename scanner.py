@@ -101,7 +101,7 @@ def run():
             tp = price * (1 + reward_pct)
 
         # =========================
-        # 🔥 PILIH TERBAIK
+        # 🔥 SELECT BEST
         # =========================
         if score > best_score:
             best_score = score
@@ -114,7 +114,7 @@ def run():
             }
 
     # =========================
-    # ❌ TIDAK ADA SINYAL
+    # ❌ NO SIGNAL
     # =========================
     if best_trade is None:
         msg = f"📊 MARKET: {market}\n\n⚠️ Tidak ada sinyal hari ini\n\n💰 EQUITY: {int(equity)}"
@@ -130,14 +130,19 @@ def run():
     sl = best_trade["sl"]
     tp = best_trade["tp"]
 
-    # 🔥 POSITION SIZING (MAX LOSS 2%)
+    # 🔥 POSITION SIZING (REALISTIC)
     risk_amount = equity * 0.02
     lot = int(risk_amount / abs(price - sl))
+
+    # BATAS LOT BIAR TIDAK NGACO
+    max_lot = 20
+
+    if lot > max_lot:
+        lot = max_lot
 
     if lot < 1:
         lot = 1
 
-    # 🔥 PAKAI TP SEBAGAI TARGET EXIT
     exit_price = tp
 
     pnl = calculate_pnl(price, exit_price, sig, lot)
