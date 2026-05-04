@@ -1,51 +1,111 @@
-import pandas as pd
+import csv
 import os
 
-TRADES_FILE = "trades.csv"
-START_CAPITAL = 10_000_000
+FILE = "trades.csv"
+START_EQUITY = 10000000
 
+
+# ===== LOAD =====
+def load_trades():
+    if not os.path.exists(FILE):
+        return []
+
+    trades = []
+    with open(FILE, newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                trades.append({
+                    "Stock": row["Stock"],
+                    "Signal": row["Signal"],
+                    "Entry": float(row["Entry"]),
+                    "Exit": float(row["Exit"]),
+                    "Lot": int(row["Lot"]),
+                    "PnL": float(row["PnL"])
+                })
+            except:
+                continue
+
+    return trades
+
+
+# ===== SAVE =====
 def save_trade(data):
-    df = pd.DataFrame([data])
+    file_exists = os.path.isfile(FILE)
 
-    if os.path.exists(TRADES_FILE):
-        old = pd.read_csv(TRADES_FILE)
-        df = pd.concat([old, df], ignore_index=True)
+    with open(FILE, "a", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["Stock","Signal","Entry","Exit","Lot","PnL"]
+        )
 
-    df.to_csv(TRADES_FILE, index=False)
+        if not file_exists:
+            writer.writeheader()
+
+        writer.writerow(data)
 
 
+# ===== PNL =====
 def calculate_pnl(entry, exit_price, signal, lot):
     if signal == "BUY":
         return (exit_price - entry) * lot * 100
-    elif signal == "SELL":
+    else:
         return (entry - exit_price) * lot * 100
-    return 0
 
 
+# ===== EQUITY =====
 def get_equity():
-    if not os.path.exists(TRADES_FILE):
-        return START_CAPITAL
+    trades = load_trades()
+    equity = START_EQUITY
 
-    df = pd.read_csv(TRADES_FILE)
-    return START_CAPITAL + df["PnL"].sum()
+    for t in trades:
+        equity += t["PnL"]
+
+    return equity
 
 
+# ===== PERFORMANCE =====
 def get_performance():
-    if not os.path.exists(TRADES_FILE):
-        return "Belum ada trade"
+    trades = load_trades()
 
-    df = pd.read_csv(TRADES_FILE)
+    wins = sum(1 for t in trades if t["PnL"] > 0)
+    losses = sum(1 for t in trades if t["PnL"] < 0)
 
-    total = len(df)
-    win = len(df[df["PnL"] > 0])
-    loss = len(df[df["PnL"] <= 0])
+    total = len(trades)
 
-    winrate = (win / total) * 100 if total > 0 else 0
-    equity = START_CAPITAL + df["PnL"].sum()
+    winrate = (wins / total * 100) if total > 0 else 0
 
-    return f"""
-Trade: {total}
-Win: {win} | Loss: {loss}
-Winrate: {round(winrate,2)}%
-Equity: {int(equity)}
-"""
+    return f"Trade: {total}\nWin: {wins} | Loss: {losses}\nWinrate: {round(winrate,2)}%"
+
+
+# ===== EXPECTANCY =====
+def get_expectancy(trades):
+    wins = [t["PnL"] for t in trades if t["PnL"] > 0]
+    losses = [abs(t["PnL"]) for t in trades if t["PnL"] < 0]
+
+    total = len(trades)
+    if total == 0:
+        return 0
+
+    winrate = len(wins) / total
+    lossrate = len(losses) / total
+
+    avg_win = sum(wins) / len(wins) if wins else 0
+    avg_loss = sum(losses) / len(losses) if losses else 0
+
+    expectancy = (winrate * avg_win) - (lossrate * avg_loss)
+
+    return round(expectancy, 2)
+
+
+# ===== DYNAMIC LOT =====
+def calculate_lot(entry, sl, equity, risk_pct=0.02):
+    risk_amount = equity * risk_pct
+    risk_per_unit = abs(entry - sl)
+
+    if risk_per_unit == 0:
+        return 1
+
+    lot = risk_amount / risk_per_unit
+
+    return max(1, int(lot))
