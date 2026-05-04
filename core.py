@@ -64,7 +64,7 @@ def get_market_regime(df):
     return "SIDEWAYS"
 
 
-# 🔥 FINAL SIGNAL (BREAKOUT ONLY)
+# 🔥 FINAL SIGNAL (BALANCED)
 def signal(df):
     if df is None or len(df) < 2:
         return "HOLD", None
@@ -85,18 +85,24 @@ def signal(df):
     strategy = choose_strategy(df)
 
     # =========================
-    # 🔥 TREND = BREAKOUT ONLY
+    # 🔥 TREND (FLEXIBLE ENTRY)
     # =========================
     if strategy == "TREND":
 
-        # SELL (breakdown)
+        # SELL
         if ema20 < ema50:
-            if r["Close"] < prev["Low"] and adx > 20:
+            if (
+                (r["Close"] < prev["Low"] or r["Close"] < ema20)
+                and adx > 15
+            ):
                 return "SELL", price
 
-        # BUY (breakout)
+        # BUY
         if ema20 > ema50:
-            if r["Close"] > prev["High"] and adx > 20:
+            if (
+                (r["Close"] > prev["High"] or r["Close"] > ema20)
+                and adx > 15
+            ):
                 return "BUY", price
 
     # =========================
@@ -104,10 +110,10 @@ def signal(df):
     # =========================
     elif strategy == "SIDEWAYS":
 
-        if rsi > 70:
+        if rsi > 65:
             return "SELL", price
 
-        if rsi < 30:
+        if rsi < 35:
             return "BUY", price
 
     return "HOLD", price
