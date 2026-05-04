@@ -2,94 +2,110 @@ import csv
 import os
 
 FILE = "trades.csv"
-START_EQUITY = 10000000
+START_EQUITY = 10000000  # 10 juta awal
 
 
-# ===== LOAD =====
+# =========================
+# LOAD TRADES
+# =========================
 def load_trades():
     if not os.path.exists(FILE):
         return []
 
-    trades = []
-    with open(FILE, newline="") as f:
+    with open(FILE, "r") as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            try:
-                trades.append({
-                    "Stock": row["Stock"],
-                    "Signal": row["Signal"],
-                    "Entry": float(row["Entry"]),
-                    "Exit": float(row["Exit"]),
-                    "Lot": int(row["Lot"]),
-                    "PnL": float(row["PnL"])
-                })
-            except:
-                continue
-
-    return trades
+        return list(reader)
 
 
-# ===== SAVE =====
-def save_trade(data):
-    file_exists = os.path.isfile(FILE)
+# =========================
+# SAVE TRADE
+# =========================
+def save_trade(trade):
+    file_exists = os.path.exists(FILE)
 
     with open(FILE, "a", newline="") as f:
-        writer = csv.DictWriter(
-            f,
-            fieldnames=["Stock","Signal","Entry","Exit","Lot","PnL"]
-        )
+        writer = csv.DictWriter(f, fieldnames=[
+            "Stock", "Signal", "Entry", "Exit", "Lot", "PnL"
+        ])
 
         if not file_exists:
             writer.writeheader()
 
-        writer.writerow(data)
+        writer.writerow(trade)
 
 
-# ===== PNL =====
+# =========================
+# PNL CALCULATION
+# =========================
 def calculate_pnl(entry, exit_price, signal, lot):
     if signal == "BUY":
-        return (exit_price - entry) * lot * 100
-    else:
-        return (entry - exit_price) * lot * 100
+        return (exit_price - entry) * lot
+
+    elif signal == "SELL":
+        return (entry - exit_price) * lot
+
+    return 0
 
 
-# ===== EQUITY =====
+# =========================
+# EQUITY
+# =========================
 def get_equity():
     trades = load_trades()
+
     equity = START_EQUITY
 
     for t in trades:
-        equity += t["PnL"]
+        equity += float(t["PnL"])
 
-    # 🔥 PROTEKSI
-    if equity < 0:
-        equity = 0
-
-    return equity
+    return round(equity, 2)
 
 
-# ===== PERFORMANCE =====
+# =========================
+# PERFORMANCE
+# =========================
 def get_performance():
     trades = load_trades()
 
-    wins = sum(1 for t in trades if t["PnL"] > 0)
-    losses = sum(1 for t in trades if t["PnL"] < 0)
+    if not trades:
+        return "Trade: 0\nWin: 0 | Loss: 0\nWinrate: 0%"
+
+    win = 0
+    loss = 0
+
+    for t in trades:
+        pnl = float(t["PnL"])
+
+        if pnl > 0:
+            win += 1
+        elif pnl < 0:
+            loss += 1
 
     total = len(trades)
-    winrate = (wins / total * 100) if total > 0 else 0
+    winrate = (win / total) * 100 if total > 0 else 0
 
-    return f"Trade: {total}\nWin: {wins} | Loss: {losses}\nWinrate: {round(winrate,2)}%"
+    return f"Trade: {total}\nWin: {win} | Loss: {loss}\nWinrate: {round(winrate,2)}%"
 
 
-# ===== EXPECTANCY =====
+# =========================
+# EXPECTANCY (FIXED)
+# =========================
 def get_expectancy(trades):
-    wins = [t["PnL"] for t in trades if t["PnL"] > 0]
-    losses = [abs(t["PnL"]) for t in trades if t["PnL"] < 0]
-
-    total = len(trades)
-    if total == 0:
+    if not trades or len(trades) == 0:
         return 0
 
+    wins = []
+    losses = []
+
+    for t in trades:
+        pnl = float(t["PnL"])
+
+        if pnl > 0:
+            wins.append(pnl)
+        elif pnl < 0:
+            losses.append(abs(pnl))
+
+    total = len(trades)
     winrate = len(wins) / total
     lossrate = len(losses) / total
 
@@ -101,27 +117,14 @@ def get_expectancy(trades):
     return round(expectancy, 2)
 
 
-# ===== SAFE LOT CALCULATION =====
-def calculate_lot(entry, sl, equity, risk_pct=0.02):
-    # max risk per trade
-    max_risk = equity * risk_pct
+# =========================
+# OPTIONAL: LOT CALCULATOR (fallback)
+# =========================
+def calculate_lot(price, sl, equity):
+    risk_amount = equity * 0.02
+    lot = int(risk_amount / abs(price - sl))
 
-    risk_per_unit = abs(entry - sl)
-
-    if risk_per_unit <= 0:
-        return 1
-
-    # hitung lot (disesuaikan dengan multiplier saham 100)
-    lot = max_risk / (risk_per_unit * 100)
-
-    lot = int(lot)
-
-    # 🔥 MIN LOT
     if lot < 1:
         lot = 1
-
-    # 🔥 HARD LIMIT (ANTI OVERLEVERAGE)
-    if lot > 50:
-        lot = 50
 
     return lot
