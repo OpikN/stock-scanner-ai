@@ -1,5 +1,6 @@
 yfinance
-ta
 pandas
 requests
+ta
 streamlit
+matplotlib
