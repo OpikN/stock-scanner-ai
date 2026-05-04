@@ -2,7 +2,6 @@ import yfinance as yf
 import pandas as pd
 import ta
 import time
-import math
 
 STOCKS = ["BBCA.JK","BBRI.JK","TLKM.JK","BMRI.JK","ASII.JK"]
 IHSG = "^JKSE"
@@ -19,16 +18,15 @@ def get_data(symbol):
                 progress=False
             )
 
-            # VALIDASI
             if df is None or df.empty:
                 time.sleep(2)
                 continue
 
-            # FIX MULTI INDEX
+            # FIX multi index
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
-            # BUANG DATA KOSONG
+            # buang data kosong
             df = df.dropna()
 
             if df.empty:
@@ -44,7 +42,7 @@ def get_data(symbol):
     return None
 
 
-# ===== COMPUTE INDICATOR =====
+# ===== COMPUTE =====
 def compute(df):
     try:
         close = df["Close"]
@@ -54,7 +52,7 @@ def compute(df):
         df["rsi"]   = ta.momentum.rsi(close, window=14)
         df["adx"]   = ta.trend.adx(df["High"], df["Low"], close, window=14)
 
-        # BUANG NAN HASIL INDIKATOR
+        # buang NaN hasil indikator
         df = df.dropna()
 
         return df
@@ -76,13 +74,14 @@ def get_market_regime(df):
 
     if r["ema20"] > r["ema50"] and r["adx"] > 25:
         return "BULL"
+
     elif r["ema20"] < r["ema50"] and r["adx"] > 25:
         return "BEAR"
 
     return "SIDEWAYS"
 
 
-# ===== SIGNAL =====
+# ===== SIGNAL (UPGRADE) =====
 def signal(df):
     if df is None or df.empty:
         return "HOLD", None
@@ -91,7 +90,7 @@ def signal(df):
 
     price = r["Close"]
 
-    # ===== FIX NAN PRICE =====
+    # ===== VALIDASI PRICE =====
     if price is None or pd.isna(price):
         return "HOLD", None
 
@@ -100,14 +99,33 @@ def signal(df):
     except:
         return "HOLD", None
 
-    # VALIDASI INDIKATOR
-    if pd.isna(r["ema20"]) or pd.isna(r["ema50"]):
+    ema20 = r["ema20"]
+    ema50 = r["ema50"]
+    rsi   = r["rsi"]
+    adx   = r["adx"]
+
+    # ===== VALIDASI INDIKATOR =====
+    if pd.isna(ema20) or pd.isna(ema50) or pd.isna(rsi) or pd.isna(adx):
         return "HOLD", price
 
-    # ===== LOGIC =====
-    if r["ema20"] > r["ema50"]:
+    # ===== FILTER TREND LEMAH =====
+    if adx < 20:
+        return "HOLD", price
+
+    # ===== FILTER ENTRY JELEK =====
+    # hindari SELL saat terlalu oversold
+    if rsi < 30:
+        return "HOLD", price
+
+    # hindari BUY saat terlalu overbought
+    if rsi > 70:
+        return "HOLD", price
+
+    # ===== LOGIC KUAT =====
+    if ema20 > ema50 and rsi > 50:
         return "BUY", price
-    elif r["ema20"] < r["ema50"]:
+
+    elif ema20 < ema50 and rsi < 50:
         return "SELL", price
 
     return "HOLD", price
