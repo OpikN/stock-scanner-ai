@@ -17,6 +17,10 @@ CHAT_ID   = os.getenv("CHAT_ID")
 CAPITAL_INIT = 10_000_000
 STATE_FILE = "state.json"
 
+MAX_POSITIONS = 3
+MAX_DRAWDOWN = 0.15
+RISK_PER_TRADE = 0.02
+
 # ==============================
 # STATE
 # ==============================
@@ -25,7 +29,7 @@ def load_state():
         with open(STATE_FILE) as f:
             return json.load(f)
     except:
-        return {"mode":"NORMAL","last_winrate":0}
+        return {"mode":"NORMAL"}
 
 def save_state(state):
     with open(STATE_FILE,"w") as f:
@@ -42,7 +46,7 @@ def send(msg):
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
 # ==============================
-# DOWNLOAD (ANTI ERROR)
+# DOWNLOAD
 # ==============================
 def get_data(symbol):
     for i in range(3):
@@ -50,18 +54,15 @@ def get_data(symbol):
             df = yf.download(symbol, period="6mo", interval="1d", progress=False, threads=False)
 
             if df is None or df.empty:
-                print("Retry kosong:", symbol)
                 time.sleep(2)
                 continue
 
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
-            print("OK:", symbol, "Rows:", len(df))
             return df
 
-        except Exception as e:
-            print("Retry error:", symbol, e)
+        except:
             time.sleep(2)
 
     return None
@@ -79,7 +80,7 @@ def compute(df):
     return df
 
 # ==============================
-# SIGNAL + CONFIDENCE
+# SIGNAL
 # ==============================
 def signal(df, mode):
     r = df.iloc[-1]
@@ -122,66 +123,93 @@ def signal(df, mode):
     return sig, price, sl, tp, adx, confidence
 
 # ==============================
-# POSITION SIZE
+# POSITION SIZE (IDX FIX)
 # ==============================
-def calc_lot(equity, entry, sl, risk_pct=0.02):
-    risk_value = equity * risk_pct
+def calc_lot(equity, entry, sl):
+    risk_value = equity * RISK_PER_TRADE
     risk_per_share = abs(entry - sl)
 
     if risk_per_share == 0:
         return 0
 
-    lot = int(risk_value / risk_per_share)
+    shares = risk_value / risk_per_share
+    lot = int(shares / 100)
+
+    max_lot = int(equity / (entry * 100))
+    lot = min(lot, max_lot)
+
     return max(lot, 0)
 
 # ==============================
-# BACKTEST (COMPOUNDING)
+# BACKTEST PORTFOLIO
 # ==============================
-def backtest(df, mode):
+def backtest_portfolio(df, mode):
     equity = CAPITAL_INIT
+    peak = equity
+
+    active = []
     trades = []
 
     for i in range(60, len(df)):
+
+        # drawdown control
+        drawdown = (equity - peak) / peak
+        if drawdown <= -MAX_DRAWDOWN:
+            break
+
+        peak = max(peak, equity)
+
         sub = df.iloc[:i]
         sig, entry, sl, tp, _, _ = signal(sub, mode)
 
-        if sig == "HOLD":
-            continue
+        # entry
+        if sig != "HOLD" and len(active) < MAX_POSITIONS:
+            lot = calc_lot(equity, entry, sl)
+            if lot > 0:
+                active.append({
+                    "type": sig,
+                    "entry": entry,
+                    "sl": sl,
+                    "tp": tp,
+                    "lot": lot
+                })
 
-        lot = calc_lot(equity, entry, sl)
+        # manage
+        new_active = []
 
-        if lot == 0:
-            continue
-
-        for j in range(i, len(df)):
-            high = df["High"].iloc[j]
-            low  = df["Low"].iloc[j]
+        for pos in active:
+            high = df["High"].iloc[i]
+            low  = df["Low"].iloc[i]
 
             exit_price = None
 
-            if sig == "BUY":
-                if low <= sl:
-                    exit_price = sl
-                elif high >= tp:
-                    exit_price = tp
+            if pos["type"] == "BUY":
+                if low <= pos["sl"]:
+                    exit_price = pos["sl"]
+                elif high >= pos["tp"]:
+                    exit_price = pos["tp"]
 
                 if exit_price:
-                    pnl = (exit_price - entry) * lot
+                    pnl = (exit_price - pos["entry"]) * pos["lot"]
                     equity += pnl
                     trades.append(pnl)
-                    break
+                else:
+                    new_active.append(pos)
 
-            elif sig == "SELL":
-                if high >= sl:
-                    exit_price = sl
-                elif low <= tp:
-                    exit_price = tp
+            elif pos["type"] == "SELL":
+                if high >= pos["sl"]:
+                    exit_price = pos["sl"]
+                elif low <= pos["tp"]:
+                    exit_price = pos["tp"]
 
                 if exit_price:
-                    pnl = (entry - exit_price) * lot
+                    pnl = (pos["entry"] - exit_price) * pos["lot"]
                     equity += pnl
                     trades.append(pnl)
-                    break
+                else:
+                    new_active.append(pos)
+
+        active = new_active
 
     if not trades:
         return 0, 0, int(equity)
@@ -204,83 +232,74 @@ def run():
         df = get_data(s)
 
         if df is None or len(df) < 50:
-            print("Skip:", s)
             continue
 
-        try:
-            df = compute(df)
+        df = compute(df)
 
-            sig, entry, sl, tp, adx, confidence = signal(df, mode)
-            winrate, trades, final_cap = backtest(df, mode)
+        sig, entry, sl, tp, adx, conf = signal(df, mode)
+        winrate, trades, final_cap = backtest_portfolio(df, mode)
 
-            lot = calc_lot(CAPITAL_INIT, entry, sl)
+        lot = calc_lot(CAPITAL_INIT, entry, sl)
 
-            score = winrate * 0.6 + trades * 2
+        score = winrate * 0.6 + trades * 2
 
-            rows.append({
-                "Stock": s,
-                "Signal": sig,
-                "Entry": round(entry,2),
-                "SL": round(sl,2),
-                "TP": round(tp,2),
-                "Lot": lot,
-                "ADX": round(adx,2),
-                "Confidence": confidence,
-                "Winrate": winrate,
-                "Trades": trades,
-                "Score": round(score,2)
-            })
-
-        except Exception as e:
-            print("ERR:", s, e)
+        rows.append({
+            "Stock": s,
+            "Signal": sig,
+            "Entry": round(entry,2),
+            "SL": round(sl,2),
+            "TP": round(tp,2),
+            "Lot": lot,
+            "ADX": round(adx,2),
+            "Confidence": conf,
+            "Winrate": winrate,
+            "Trades": trades,
+            "Score": round(score,2)
+        })
 
     if not rows:
-        send("⚠️ Data kosong (API error / market libur)")
+        send("⚠️ Data kosong")
         return
 
     df = pd.DataFrame(rows)
 
-    # ==============================
-    # UPDATE MODE
-    # ==============================
-    avg_winrate = df["Winrate"].mean()
-
-    if avg_winrate < 40:
+    # adaptive mode
+    avg = df["Winrate"].mean()
+    if avg < 40:
         state["mode"] = "SAFE"
-    elif avg_winrate > 65:
+    elif avg > 65:
         state["mode"] = "AGGRESSIVE"
     else:
         state["mode"] = "NORMAL"
 
     save_state(state)
 
-    # ==============================
-    # FILTER
-    # ==============================
+    # filter
     df = df[df["Signal"] != "HOLD"]
     df = df[df["Confidence"] != "LOW"]
     df = df[df["Winrate"] >= 50]
 
     if df.empty:
         df = pd.DataFrame(rows).sort_values("Score", ascending=False)
-        mode_label = "ALTERNATIF"
+        label = "ALTERNATIF"
     else:
         df = df.sort_values("Score", ascending=False)
-        mode_label = "REAL SIGNAL"
+        label = "REAL SIGNAL"
 
     top = df.head(3)
 
-    # ==============================
-    # TELEGRAM
-    # ==============================
-    msg = f"🤖 MODE: {state['mode']} | {mode_label}\n\n🔥 TOP SIGNAL 🔥\n\n"
+    # telegram
+    msg = f"🤖 MODE: {state['mode']} | {label}\n"
+    msg += f"📊 Max Posisi: {MAX_POSITIONS}\n\n🔥 TOP SIGNAL 🔥\n\n"
 
     for _, r in top.iterrows():
+        capital_used = int(r["Lot"] * r["Entry"] * 100)
+
         msg += (
             f"{r['Stock']} ({r['Signal']})\n"
             f"Entry: {r['Entry']} | SL: {r['SL']} | TP: {r['TP']}\n"
-            f"Lot: {r['Lot']}\n"
-            f"ADX: {r['ADX']} | Confidence: {r['Confidence']}\n"
+            f"Lot: {r['Lot']} | Capital: {capital_used}\n"
+            f"ADX: {r['ADX']} | Conf: {r['Confidence']}\n"
             f"Winrate: {r['Winrate']}% | Trades: {r['Trades']}\n"
             f"Score: {r['Score']}\n\n"
         )
