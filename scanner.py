@@ -1,119 +1,158 @@
-import yfinance as yf
-import pandas as pd
-import ta
-import time
-from ai_strategy import choose_strategy
+import os
+import requests
 
-STOCKS = ["BBCA.JK","BBRI.JK","TLKM.JK","BMRI.JK","ASII.JK"]
-IHSG = "^JKSE"
-
-
-def get_data(symbol):
-    for _ in range(3):
-        try:
-            df = yf.download(symbol, period="6mo", interval="1d", progress=False)
-
-            if df is None or df.empty:
-                time.sleep(2)
-                continue
-
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-
-            df = df.dropna()
-
-            if df.empty:
-                continue
-
-            return df
-
-        except:
-            time.sleep(2)
-
-    return None
+from core import *
+from logger import save_log, get_stats
+from portfolio import (
+    save_trade,
+    calculate_pnl,
+    get_equity,
+    get_performance,
+    calculate_lot,
+    get_expectancy,
+    load_trades
+)
+from backtest import run_backtest
 
 
-def compute(df):
+def send(msg):
+    BOT_TOKEN = os.getenv("BOT_TOKEN")
+    CHAT_ID   = os.getenv("CHAT_ID")
+
+    if not BOT_TOKEN or not CHAT_ID:
+        print("❌ ENV NOT FOUND")
+        return
+
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+
     try:
-        close = df["Close"]
+        r = requests.post(url, data={
+            "chat_id": CHAT_ID,
+            "text": msg
+        })
 
-        df["ema20"] = ta.trend.ema_indicator(close, window=20)
-        df["ema50"] = ta.trend.ema_indicator(close, window=50)
-        df["rsi"]   = ta.momentum.rsi(close, window=14)
-        df["adx"]   = ta.trend.adx(df["High"], df["Low"], close, window=14)
+        print("STATUS:", r.status_code)
+        print("RESP:", r.text)
 
-        df = df.dropna()
-        return df
-
-    except:
-        return None
+    except Exception as e:
+        print("ERROR TELEGRAM:", e)
 
 
-def get_market_regime(df):
-    if df is None or df.empty:
-        return "SIDEWAYS"
+def run():
+    equity = get_equity()
 
-    r = df.iloc[-1]
+    if equity <= 0:
+        send("❌ SYSTEM STOP - Equity habis")
+        return
 
-    if r["ema20"] > r["ema50"] and r["adx"] > 25:
-        return "BULL"
+    ihsg = compute(get_data(IHSG))
+    market = get_market_regime(ihsg)
 
-    elif r["ema20"] < r["ema50"] and r["adx"] > 25:
-        return "BEAR"
+    best_trade = None
+    best_score = -999
 
-    return "SIDEWAYS"
+    results = []
+    log_data = []
+
+    for s in STOCKS:
+        df = compute(get_data(s))
+        if df is None:
+            continue
+
+        sig, price = signal(df)
+
+        if sig == "HOLD":
+            continue
+
+        r = df.iloc[-1]
+
+        # 🔥 FILTER
+        if r["adx"] < 15:
+            continue
+
+        distance = abs(price - r["ema20"]) / price
+        if distance < 0.005:
+            continue
+
+        # 🔥 SCORING
+        score = 0
+
+        if market == "BEAR" and sig == "SELL":
+            score += 3
+        elif market == "BULL" and sig == "BUY":
+            score += 3
+        else:
+            score += 1
+
+        score += int(r["adx"] / 10)
+
+        exit_price, _ = run_backtest(df, sig, price)
+        if exit_price is None:
+            continue
+
+        if score > best_score:
+            best_score = score
+            best_trade = {
+                "stock": s,
+                "signal": sig,
+                "price": price,
+                "exit": exit_price
+            }
+
+    # ❌ TIDAK ADA SINYAL
+    if best_trade is None:
+        msg = f"📊 MARKET: {market}\n\n⚠️ Tidak ada sinyal hari ini\n\n💰 EQUITY: {int(equity)}"
+        send(msg)
+        return
+
+    # 💰 EXECUTE TRADE
+    s = best_trade["stock"]
+    sig = best_trade["signal"]
+    price = best_trade["price"]
+    exit_price = best_trade["exit"]
+
+    sl = price * (1.03 if sig == "SELL" else 0.97)
+    lot = calculate_lot(price, sl, equity)
+
+    pnl = calculate_pnl(price, exit_price, sig, lot)
+
+    trade_data = {
+        "Stock": s,
+        "Signal": sig,
+        "Entry": round(price, 2),
+        "Exit": round(exit_price, 2),
+        "Lot": lot,
+        "PnL": round(pnl, 2)
+    }
+
+    save_trade(trade_data)
+
+    results.append(
+        f"{s} → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | Lot {lot} | PnL {round(pnl,2)} | Score {best_score}"
+    )
+
+    log_data.append({
+        "Stock": s,
+        "Signal": sig,
+        "Entry": round(price, 2)
+    })
+
+    save_log(log_data)
+
+    stats = get_stats()
+    equity = get_equity()
+    perf = get_performance()
+    exp = get_expectancy(load_trades())
+
+    msg = f"📊 MARKET: {market}\n\n🔥 BEST TRADE 🔥\n\n"
+    msg += "\n".join(results)
+    msg += f"\n\n📊 STATS:\n{stats}"
+    msg += f"\n\n💰 EQUITY: {int(equity)}"
+    msg += f"\n📈 PERFORMANCE:\n{perf}"
+    msg += f"\n📊 EXPECTANCY: {exp}"
+
+    send(msg)
 
 
-# 🔥 FINAL SIGNAL (BALANCED)
-def signal(df):
-    if df is None or len(df) < 2:
-        return "HOLD", None
-
-    r = df.iloc[-1]
-    prev = df.iloc[-2]
-
-    price = float(r["Close"])
-
-    ema20 = r["ema20"]
-    ema50 = r["ema50"]
-    adx   = r["adx"]
-    rsi   = r["rsi"]
-
-    if pd.isna(ema20) or pd.isna(ema50) or pd.isna(adx):
-        return "HOLD", price
-
-    strategy = choose_strategy(df)
-
-    # =========================
-    # 🔥 TREND (FLEXIBLE ENTRY)
-    # =========================
-    if strategy == "TREND":
-
-        # SELL
-        if ema20 < ema50:
-            if (
-                (r["Close"] < prev["Low"] or r["Close"] < ema20)
-                and adx > 15
-            ):
-                return "SELL", price
-
-        # BUY
-        if ema20 > ema50:
-            if (
-                (r["Close"] > prev["High"] or r["Close"] > ema20)
-                and adx > 15
-            ):
-                return "BUY", price
-
-    # =========================
-    # 🔥 SIDEWAYS
-    # =========================
-    elif strategy == "SIDEWAYS":
-
-        if rsi > 65:
-            return "SELL", price
-
-        if rsi < 35:
-            return "BUY", price
-
-    return "HOLD", price
+if __name__ == "__main__":
+    run()
