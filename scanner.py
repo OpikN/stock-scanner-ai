@@ -7,6 +7,7 @@ from portfolio import save_trade, calculate_pnl, get_equity, get_performance
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID   = os.getenv("CHAT_ID")
 
+
 def send(msg):
     if not BOT_TOKEN or not CHAT_ID:
         print("❌ Secret tidak terbaca")
@@ -17,9 +18,10 @@ def send(msg):
 
 
 def run():
+    # ===== MARKET CHECK =====
     ihsg = get_data(IHSG)
     if ihsg is None:
-        send("❌ Gagal ambil IHSG")
+        send("❌ Gagal ambil data IHSG")
         return
 
     ihsg = compute(ihsg)
@@ -27,7 +29,9 @@ def run():
 
     results = []
     log_data = []
+    trade_count = 0
 
+    # ===== SCAN STOCK =====
     for s in STOCKS:
         df = get_data(s)
         if df is None:
@@ -36,7 +40,7 @@ def run():
         df = compute(df)
         sig, price = signal(df)
 
-        # FILTER MARKET
+        # ===== FILTER MARKET =====
         if market == "BULL" and sig == "SELL":
             continue
         if market == "BEAR" and sig == "BUY":
@@ -54,6 +58,8 @@ def run():
 
         # ===== SIMULASI TRADE =====
         lot = 1
+
+        # exit dummy (biar selalu ada PnL)
         exit_price = price * (1.02 if sig == "BUY" else 0.98)
 
         pnl = calculate_pnl(price, exit_price, sig, lot)
@@ -67,12 +73,27 @@ def run():
             "PnL": round(pnl,2)
         })
 
-    if not results:
-        send(f"⚠️ Market: {market}\nTidak ada sinyal")
+        trade_count += 1
+
+    # ===== JIKA TIDAK ADA SINYAL =====
+    if trade_count == 0:
+        # tetap buat file supaya dashboard hidup
+        save_trade({
+            "Stock": "NONE",
+            "Signal": "NONE",
+            "Entry": 0,
+            "Exit": 0,
+            "Lot": 0,
+            "PnL": 0
+        })
+
+        send(f"⚠️ MARKET: {market}\nTidak ada sinyal hari ini")
         return
 
+    # ===== SAVE LOG =====
     save_log(log_data)
 
+    # ===== MESSAGE =====
     msg = f"📊 MARKET: {market}\n\n🔥 SIGNAL 🔥\n\n"
     msg += "\n".join(results)
 
@@ -84,6 +105,7 @@ def run():
     msg += f"\n\n💰 EQUITY: {int(equity)}"
     msg += f"\n📈 PERFORMANCE:\n{perf}"
 
+    # ===== SEND TELEGRAM =====
     send(msg)
 
 
