@@ -73,7 +73,7 @@ def get_market_regime(df):
     return "SIDEWAYS"
 
 
-# ===== SIGNAL (AI + CONFIRMATION) =====
+# ===== SIGNAL (BALANCED AI) =====
 def signal(df):
     if df is None or df.empty or len(df) < 2:
         return "HOLD", None
@@ -99,39 +99,37 @@ def signal(df):
     strategy = choose_strategy(df)
 
     # =========================
-    # 🔥 TREND STRATEGY (CONFIRMATION)
+    # 🔥 TREND (FLEXIBLE CONFIRMATION)
     # =========================
     if strategy == "TREND":
 
-        # SELL (trend turun + konfirmasi turun)
+        # SELL
         if ema20 < ema50:
             if (
-                r["Close"] < prev["Close"] and
-                r["Close"] < ema20 and
-                rsi > 55 and
-                adx > 20
+                (r["Close"] < prev["Close"] or r["Close"] < ema20)
+                and rsi > 50
+                and adx > 15
             ):
                 return "SELL", price
 
-        # BUY (trend naik + konfirmasi naik)
+        # BUY
         if ema20 > ema50:
             if (
-                r["Close"] > prev["Close"] and
-                r["Close"] > ema20 and
-                rsi < 45 and
-                adx > 20
+                (r["Close"] > prev["Close"] or r["Close"] > ema20)
+                and rsi < 50
+                and adx > 15
             ):
                 return "BUY", price
 
     # =========================
-    # 🔥 SIDEWAYS STRATEGY
+    # 🔥 SIDEWAYS
     # =========================
     elif strategy == "SIDEWAYS":
 
-        if rsi > 70:
+        if rsi > 65:
             return "SELL", price
 
-        if rsi < 30:
+        if rsi < 35:
             return "BUY", price
 
     return "HOLD", price
