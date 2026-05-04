@@ -3,7 +3,15 @@ import requests
 
 from core import *
 from logger import save_log, get_stats
-from portfolio import save_trade, calculate_pnl, get_equity, get_performance
+from portfolio import (
+    save_trade,
+    calculate_pnl,
+    get_equity,
+    get_performance,
+    calculate_lot,
+    get_expectancy,
+    load_trades
+)
 from backtest import run_backtest
 
 
@@ -25,7 +33,7 @@ def send(msg):
 def run():
     print("🚀 START SCANNER")
 
-    # ===== MARKET CHECK =====
+    # ===== MARKET =====
     ihsg = get_data(IHSG)
     if ihsg is None:
         send("❌ Gagal ambil data IHSG")
@@ -40,13 +48,12 @@ def run():
     log_data = []
     trade_count = 0
 
-    # ===== SCAN STOCK =====
+    # ===== SCAN =====
     for s in STOCKS:
         print("SCAN:", s)
 
         df = get_data(s)
         if df is None:
-            print("❌ DATA KOSONG:", s)
             continue
 
         df = compute(df)
@@ -55,11 +62,10 @@ def run():
 
         sig, price = signal(df)
 
-        print("SIGNAL:", sig, "PRICE:", price)
+        print("SIGNAL:", sig, price)
 
-        # ===== VALIDASI PRICE =====
-        if price is None or price == 0:
-            print("❌ PRICE INVALID:", s)
+        # ===== VALIDASI =====
+        if sig == "HOLD" or price is None or price == 0:
             continue
 
         # ===== FILTER MARKET =====
@@ -67,23 +73,24 @@ def run():
             continue
         if market == "BEAR" and sig == "BUY":
             continue
-        # SIDEWAYS tetap allow supaya ada data
 
-        if sig == "HOLD":
-            continue
-
-        # ===== BACKTEST REAL =====
+        # ===== BACKTEST =====
         exit_price, result = run_backtest(df, sig, price)
 
         if exit_price is None:
-            print("❌ BACKTEST GAGAL:", s)
             continue
 
-        lot = 1
+        # ===== RISK MANAGEMENT =====
+        equity = get_equity()
+
+        # SL asumsi 3%
+        sl = price * (1.03 if sig == "SELL" else 0.97)
+
+        lot = calculate_lot(price, sl, equity, risk_pct=0.02)
 
         pnl = calculate_pnl(price, exit_price, sig, lot)
 
-        # ===== SAVE TRADE =====
+        # ===== SAVE =====
         trade_data = {
             "Stock": s,
             "Signal": sig,
@@ -98,7 +105,7 @@ def run():
         save_trade(trade_data)
 
         results.append(
-            f"{s} → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | PnL {round(pnl,2)}"
+            f"{s} → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | Lot {lot} | PnL {round(pnl,2)}"
         )
 
         log_data.append({
@@ -109,22 +116,11 @@ def run():
 
         trade_count += 1
 
-    # ===== FALLBACK (AGAR DASHBOARD TIDAK KOSONG) =====
+    # ===== FALLBACK =====
     if trade_count == 0:
-        print("⚠️ TIDAK ADA TRADE → BUAT DUMMY")
+        print("⚠️ TIDAK ADA TRADE")
 
-        dummy = {
-            "Stock": "BBCA.JK",
-            "Signal": "BUY",
-            "Entry": 100,
-            "Exit": 98,
-            "Lot": 1,
-            "PnL": -200
-        }
-
-        save_trade(dummy)
-
-        send(f"⚠️ MARKET: {market}\nTidak ada sinyal, dummy dibuat")
+        send(f"⚠️ MARKET: {market}\nTidak ada sinyal hari ini")
         return
 
     # ===== SAVE LOG =====
@@ -135,13 +131,17 @@ def run():
     equity = get_equity()
     perf = get_performance()
 
-    # ===== TELEGRAM MESSAGE =====
+    trades = load_trades()
+    exp = get_expectancy(trades)
+
+    # ===== TELEGRAM =====
     msg = f"📊 MARKET: {market}\n\n🔥 SIGNAL 🔥\n\n"
     msg += "\n".join(results)
 
     msg += f"\n\n📊 STATS:\n{stats}"
     msg += f"\n\n💰 EQUITY: {int(equity)}"
     msg += f"\n📈 PERFORMANCE:\n{perf}"
+    msg += f"\n📊 EXPECTANCY: {exp}"
 
     send(msg)
 
