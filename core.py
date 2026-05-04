@@ -26,7 +26,6 @@ def get_data(symbol):
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
-            # buang data kosong
             df = df.dropna()
 
             if df.empty:
@@ -52,7 +51,6 @@ def compute(df):
         df["rsi"]   = ta.momentum.rsi(close, window=14)
         df["adx"]   = ta.trend.adx(df["High"], df["Low"], close, window=14)
 
-        # buang NaN hasil indikator
         df = df.dropna()
 
         return df
@@ -81,12 +79,13 @@ def get_market_regime(df):
     return "SIDEWAYS"
 
 
-# ===== SIGNAL (UPGRADE) =====
+# ===== SIGNAL (PULLBACK SYSTEM) =====
 def signal(df):
-    if df is None or df.empty:
+    if df is None or df.empty or len(df) < 3:
         return "HOLD", None
 
     r = df.iloc[-1]
+    prev = df.iloc[-2]
 
     price = r["Close"]
 
@@ -112,20 +111,22 @@ def signal(df):
     if adx < 20:
         return "HOLD", price
 
-    # ===== FILTER ENTRY JELEK =====
-    # hindari SELL saat terlalu oversold
-    if rsi < 30:
-        return "HOLD", price
+    # =========================
+    # 🔻 SELL (PULLBACK)
+    # =========================
+    if ema20 < ema50:
+        # harga naik ke EMA20 → entry SELL
+        if prev["Close"] < prev["ema20"] and r["Close"] > r["ema20"]:
+            if rsi > 55:  # konfirmasi overbought kecil
+                return "SELL", price
 
-    # hindari BUY saat terlalu overbought
-    if rsi > 70:
-        return "HOLD", price
-
-    # ===== LOGIC KUAT =====
-    if ema20 > ema50 and rsi > 50:
-        return "BUY", price
-
-    elif ema20 < ema50 and rsi < 50:
-        return "SELL", price
+    # =========================
+    # 🔺 BUY (PULLBACK)
+    # =========================
+    if ema20 > ema50:
+        # harga turun ke EMA20 → entry BUY
+        if prev["Close"] > prev["ema20"] and r["Close"] < r["ema20"]:
+            if rsi < 45:  # konfirmasi oversold kecil
+                return "BUY", price
 
     return "HOLD", price
