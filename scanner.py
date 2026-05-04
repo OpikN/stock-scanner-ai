@@ -2,6 +2,7 @@ import os
 import requests
 
 from core import *
+from ai_strategy import choose_strategy
 from logger import save_log, get_stats
 from portfolio import (
     save_trade,
@@ -42,8 +43,6 @@ def run():
     ihsg = compute(ihsg)
     market = get_market_regime(ihsg)
 
-    print("MARKET:", market)
-
     results = []
     log_data = []
     trade_count = 0
@@ -62,11 +61,10 @@ def run():
 
         sig, price = signal(df)
 
-        print("SIGNAL:", sig, price)
-
-        # ===== VALIDASI =====
-        if sig == "HOLD" or price is None or price == 0:
+        if sig == "HOLD" or price is None:
             continue
+
+        strategy = choose_strategy(df)
 
         # ===== FILTER MARKET =====
         if market == "BULL" and sig == "SELL":
@@ -76,16 +74,12 @@ def run():
 
         # ===== BACKTEST =====
         exit_price, result = run_backtest(df, sig, price)
-
         if exit_price is None:
             continue
 
         # ===== RISK MANAGEMENT =====
         equity = get_equity()
-
-        # SL asumsi 3%
         sl = price * (1.03 if sig == "SELL" else 0.97)
-
         lot = calculate_lot(price, sl, equity, risk_pct=0.02)
 
         pnl = calculate_pnl(price, exit_price, sig, lot)
@@ -94,18 +88,16 @@ def run():
         trade_data = {
             "Stock": s,
             "Signal": sig,
-            "Entry": round(float(price), 2),
-            "Exit": round(float(exit_price), 2),
-            "Lot": int(lot),
-            "PnL": round(float(pnl), 2)
+            "Entry": round(price, 2),
+            "Exit": round(exit_price, 2),
+            "Lot": lot,
+            "PnL": round(pnl, 2)
         }
-
-        print("SAVE:", trade_data)
 
         save_trade(trade_data)
 
         results.append(
-            f"{s} → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | Lot {lot} | PnL {round(pnl,2)}"
+            f"{s} [{strategy}] → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | Lot {lot} | PnL {round(pnl,2)}"
         )
 
         log_data.append({
@@ -116,17 +108,13 @@ def run():
 
         trade_count += 1
 
-    # ===== FALLBACK =====
+    # ===== NO SIGNAL =====
     if trade_count == 0:
-        print("⚠️ TIDAK ADA TRADE")
-
         send(f"⚠️ MARKET: {market}\nTidak ada sinyal hari ini")
         return
 
-    # ===== SAVE LOG =====
     save_log(log_data)
 
-    # ===== STATS =====
     stats = get_stats()
     equity = get_equity()
     perf = get_performance()
@@ -137,7 +125,6 @@ def run():
     # ===== TELEGRAM =====
     msg = f"📊 MARKET: {market}\n\n🔥 SIGNAL 🔥\n\n"
     msg += "\n".join(results)
-
     msg += f"\n\n📊 STATS:\n{stats}"
     msg += f"\n\n💰 EQUITY: {int(equity)}"
     msg += f"\n📈 PERFORMANCE:\n{perf}"
