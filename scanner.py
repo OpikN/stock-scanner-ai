@@ -39,5 +39,7 @@ def run():
 
     send_telegram(msg)
 
+df.to_csv("data.csv", index=False)
+
 if __name__ == "__main__":
     run()
