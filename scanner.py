@@ -38,9 +38,11 @@ def run():
     ihsg = compute(get_data(IHSG))
     market = get_market_regime(ihsg)
 
+    best_trade = None
+    best_score = -999
+
     results = []
     log_data = []
-    trade_count = 0
 
     for s in STOCKS:
         df = compute(get_data(s))
@@ -52,64 +54,88 @@ def run():
         if sig == "HOLD":
             continue
 
-        # ===== FILTER JARAK (hindari entry jelek)
-        distance = abs(price - df.iloc[-1]["ema20"]) / price
-        if distance < 0.005:
+        r = df.iloc[-1]
+
+        # =========================
+        # 🔥 QUALITY FILTER
+        # =========================
+        if r["adx"] < 20:
             continue
 
-        # ===== MARKET BIAS SCORE
+        distance = abs(price - r["ema20"]) / price
+        if distance < 0.01:
+            continue
+
+        # =========================
+        # 🔥 SCORING SYSTEM
+        # =========================
         score = 0
+
         if market == "BEAR" and sig == "SELL":
-            score += 2
+            score += 3
         elif market == "BULL" and sig == "BUY":
-            score += 2
+            score += 3
         else:
-            score += 1  # masih boleh
+            score += 1
 
-        # ===== BACKTEST
-        exit_price, _ = run_backtest(df, sig, price)
-        if exit_price is None:
-            continue
+        # tambahan nilai dari ADX (trend strength)
+        score += int(r["adx"] / 10)
 
-        # ===== RISK
-        sl = price * (1.03 if sig == "SELL" else 0.97)
-        lot = calculate_lot(price, sl, equity)
+        if score > best_score:
+            exit_price, _ = run_backtest(df, sig, price)
+            if exit_price is None:
+                continue
 
-        if score >= 2:
-            lot = int(lot * 1.3)
+            best_score = score
 
-        pnl = calculate_pnl(price, exit_price, sig, lot)
+            best_trade = {
+                "stock": s,
+                "signal": sig,
+                "price": price,
+                "exit": exit_price,
+                "adx": r["adx"]
+            }
 
-        trade_data = {
-            "Stock": s,
-            "Signal": sig,
-            "Entry": round(price, 2),
-            "Exit": round(exit_price, 2),
-            "Lot": lot,
-            "PnL": round(pnl, 2)
-        }
-
-        save_trade(trade_data)
-
-        results.append(
-            f"{s} → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | Lot {lot} | PnL {round(pnl,2)}"
-        )
-
-        log_data.append({
-            "Stock": s,
-            "Signal": sig,
-            "Entry": round(price, 2)
-        })
-
-        trade_count += 1
-
-        # 🔥 BATASI TRADE (ANTI OVERTRADE)
-        if trade_count >= 2:
-            break
-
-    if trade_count == 0:
-        send(f"⚠️ MARKET: {market}\nTidak ada sinyal hari ini")
+    # =========================
+    # 🚫 NO TRADE
+    # =========================
+    if best_trade is None:
+        send(f"⚠️ MARKET: {market}\nTidak ada sinyal berkualitas hari ini")
         return
+
+    # =========================
+    # 💰 EXECUTE BEST TRADE
+    # =========================
+    s = best_trade["stock"]
+    sig = best_trade["signal"]
+    price = best_trade["price"]
+    exit_price = best_trade["exit"]
+
+    sl = price * (1.03 if sig == "SELL" else 0.97)
+    lot = calculate_lot(price, sl, equity)
+
+    pnl = calculate_pnl(price, exit_price, sig, lot)
+
+    trade_data = {
+        "Stock": s,
+        "Signal": sig,
+        "Entry": round(price, 2),
+        "Exit": round(exit_price, 2),
+        "Lot": lot,
+        "PnL": round(pnl, 2)
+    }
+
+    save_trade(trade_data)
+
+    results.append(
+        f"{s} → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | Lot {lot} | PnL {round(pnl,2)} | Score {best_score}"
+    )
+
+    log_data.append({
+        "Stock": s,
+        "Signal": sig,
+        "Entry": round(price, 2)
+    })
 
     save_log(log_data)
 
@@ -118,7 +144,7 @@ def run():
     perf = get_performance()
     exp = get_expectancy(load_trades())
 
-    msg = f"📊 MARKET: {market}\n\n🔥 SIGNAL 🔥\n\n"
+    msg = f"📊 MARKET: {market}\n\n🔥 BEST TRADE 🔥\n\n"
     msg += "\n".join(results)
     msg += f"\n\n📊 STATS:\n{stats}"
     msg += f"\n\n💰 EQUITY: {int(equity)}"
