@@ -34,7 +34,7 @@ def run():
 
     equity = get_equity()
 
-    # 🔥 STOP SYSTEM kalau equity habis
+    # 🔥 STOP kalau equity habis
     if equity <= 0:
         send("❌ SYSTEM STOP - Equity habis")
         return
@@ -58,18 +58,34 @@ def run():
 
         strategy = choose_strategy(df)
 
-        if market == "BULL" and sig == "SELL":
-            continue
-        if market == "BEAR" and sig == "BUY":
+        # =========================
+        # 🔥 SMART MARKET BIAS
+        # =========================
+        score = 0
+
+        if market == "BULL" and sig == "BUY":
+            score += 2
+        elif market == "BEAR" and sig == "SELL":
+            score += 2
+        else:
+            score -= 1
+
+        # minimal kualitas trade
+        if score < 0:
             continue
 
+        # ===== BACKTEST =====
         exit_price, result = run_backtest(df, sig, price)
         if exit_price is None:
             continue
 
-        # ===== SAFE RISK =====
+        # ===== RISK =====
         sl = price * (1.03 if sig == "SELL" else 0.97)
         lot = calculate_lot(price, sl, equity)
+
+        # 🔥 BOOST kalau searah market
+        if score >= 2:
+            lot = int(lot * 1.5)
 
         pnl = calculate_pnl(price, exit_price, sig, lot)
 
@@ -85,7 +101,7 @@ def run():
         save_trade(trade_data)
 
         results.append(
-            f"{s} [{strategy}] → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | Lot {lot} | PnL {round(pnl,2)}"
+            f"{s} [{strategy}] → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | Lot {lot} | PnL {round(pnl,2)} | Score {score}"
         )
 
         log_data.append({
