@@ -88,7 +88,6 @@ def signal(df, mode):
     ema20, ema50 = r["ema20"], r["ema50"]
     rsi, atr, adx = r["rsi"], r["atr"], r["adx"]
 
-    # MODE
     if mode == "SAFE":
         rsi_low, rsi_high = 45, 55
         atr_mult = 2.0
@@ -99,7 +98,6 @@ def signal(df, mode):
         rsi_low, rsi_high = 35, 60
         atr_mult = 1.5
 
-    # SIGNAL
     if ema20 > ema50 and rsi_low < rsi < rsi_high:
         sig = "BUY"
         sl = price - atr_mult * atr
@@ -113,12 +111,9 @@ def signal(df, mode):
     else:
         return "HOLD", price, 0, 0, 0, "LOW"
 
-    # RR
     rr = abs((tp - price) / (price - sl)) if sig == "BUY" else abs((price - tp) / (sl - price))
 
-    # CONFIDENCE
     confidence = "LOW"
-
     if adx > 25 and rr >= 1.5:
         confidence = "HIGH"
     elif adx > 20:
@@ -127,10 +122,23 @@ def signal(df, mode):
     return sig, price, sl, tp, adx, confidence
 
 # ==============================
-# BACKTEST REAL
+# POSITION SIZE
+# ==============================
+def calc_lot(equity, entry, sl, risk_pct=0.02):
+    risk_value = equity * risk_pct
+    risk_per_share = abs(entry - sl)
+
+    if risk_per_share == 0:
+        return 0
+
+    lot = int(risk_value / risk_per_share)
+    return max(lot, 0)
+
+# ==============================
+# BACKTEST (COMPOUNDING)
 # ==============================
 def backtest(df, mode):
-    capital = CAPITAL_INIT
+    equity = CAPITAL_INIT
     trades = []
 
     for i in range(60, len(df)):
@@ -140,41 +148,48 @@ def backtest(df, mode):
         if sig == "HOLD":
             continue
 
+        lot = calc_lot(equity, entry, sl)
+
+        if lot == 0:
+            continue
+
         for j in range(i, len(df)):
             high = df["High"].iloc[j]
             low  = df["Low"].iloc[j]
 
+            exit_price = None
+
             if sig == "BUY":
                 if low <= sl:
-                    pnl = (sl - entry) / entry
-                    trades.append(pnl)
-                    capital *= (1 + pnl)
-                    break
+                    exit_price = sl
                 elif high >= tp:
-                    pnl = (tp - entry) / entry
+                    exit_price = tp
+
+                if exit_price:
+                    pnl = (exit_price - entry) * lot
+                    equity += pnl
                     trades.append(pnl)
-                    capital *= (1 + pnl)
                     break
 
-            if sig == "SELL":
+            elif sig == "SELL":
                 if high >= sl:
-                    pnl = (entry - sl) / entry
-                    trades.append(pnl)
-                    capital *= (1 + pnl)
-                    break
+                    exit_price = sl
                 elif low <= tp:
-                    pnl = (entry - tp) / entry
+                    exit_price = tp
+
+                if exit_price:
+                    pnl = (entry - exit_price) * lot
+                    equity += pnl
                     trades.append(pnl)
-                    capital *= (1 + pnl)
                     break
 
     if not trades:
-        return 0, 0, capital
+        return 0, 0, int(equity)
 
     win = len([t for t in trades if t > 0])
     winrate = (win / len(trades)) * 100
 
-    return round(winrate,2), len(trades), int(capital)
+    return round(winrate,2), len(trades), int(equity)
 
 # ==============================
 # MAIN
@@ -198,6 +213,8 @@ def run():
             sig, entry, sl, tp, adx, confidence = signal(df, mode)
             winrate, trades, final_cap = backtest(df, mode)
 
+            lot = calc_lot(CAPITAL_INIT, entry, sl)
+
             score = winrate * 0.6 + trades * 2
 
             rows.append({
@@ -206,6 +223,7 @@ def run():
                 "Entry": round(entry,2),
                 "SL": round(sl,2),
                 "TP": round(tp,2),
+                "Lot": lot,
                 "ADX": round(adx,2),
                 "Confidence": confidence,
                 "Winrate": winrate,
@@ -222,7 +240,9 @@ def run():
 
     df = pd.DataFrame(rows)
 
+    # ==============================
     # UPDATE MODE
+    # ==============================
     avg_winrate = df["Winrate"].mean()
 
     if avg_winrate < 40:
@@ -234,9 +254,12 @@ def run():
 
     save_state(state)
 
+    # ==============================
     # FILTER
+    # ==============================
     df = df[df["Signal"] != "HOLD"]
     df = df[df["Confidence"] != "LOW"]
+    df = df[df["Winrate"] >= 50]
 
     if df.empty:
         df = pd.DataFrame(rows).sort_values("Score", ascending=False)
@@ -247,13 +270,16 @@ def run():
 
     top = df.head(3)
 
+    # ==============================
     # TELEGRAM
+    # ==============================
     msg = f"🤖 MODE: {state['mode']} | {mode_label}\n\n🔥 TOP SIGNAL 🔥\n\n"
 
     for _, r in top.iterrows():
         msg += (
             f"{r['Stock']} ({r['Signal']})\n"
             f"Entry: {r['Entry']} | SL: {r['SL']} | TP: {r['TP']}\n"
+            f"Lot: {r['Lot']}\n"
             f"ADX: {r['ADX']} | Confidence: {r['Confidence']}\n"
             f"Winrate: {r['Winrate']}% | Trades: {r['Trades']}\n"
             f"Score: {r['Score']}\n\n"
