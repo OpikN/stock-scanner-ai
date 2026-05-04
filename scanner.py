@@ -1,371 +1,48 @@
-# ==============================
-# IMPORT
-# ==============================
-import yfinance as yf
-import pandas as pd
-import requests, os, json, time
-import ta
-
-# ==============================
-# CONFIG
-# ==============================
-STOCKS = ["BBCA.JK","BBRI.JK","TLKM.JK","BMRI.JK","ASII.JK"]
+import os
+import requests
+from core import *
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID   = os.getenv("CHAT_ID")
 
-CAPITAL_INIT = 10_000_000
-STATE_FILE = "state.json"
-
-MAX_POSITIONS = 3
-MAX_DRAWDOWN = 0.15
-RISK_PER_TRADE = 0.02
-
-# ==============================
-# STATE
-# ==============================
-def load_state():
-    try:
-        with open(STATE_FILE) as f:
-            return json.load(f)
-    except:
-        return {"mode":"NORMAL"}
-
-def save_state(state):
-    with open(STATE_FILE,"w") as f:
-        json.dump(state,f)
-
-# ==============================
-# TELEGRAM
-# ==============================
 def send(msg):
     if not BOT_TOKEN or not CHAT_ID:
-        print("❌ Secret tidak terbaca")
+        print("❌ BOT_TOKEN / CHAT_ID tidak terbaca")
         return
+
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
-# ==============================
-# DOWNLOAD
-# ==============================
-def get_data(symbol):
-    for _ in range(3):
-        try:
-            df = yf.download(symbol, period="6mo", interval="1d", progress=False, threads=False)
-            if df is None or df.empty:
-                time.sleep(2)
-                continue
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            return df
-        except:
-            time.sleep(2)
-    return None
+    r = requests.post(url, data={
+        "chat_id": CHAT_ID,
+        "text": msg
+    })
 
-# ==============================
-# INDICATOR
-# ==============================
-def compute(df):
-    close = df["Close"]
-    df["ema20"] = ta.trend.ema_indicator(close, 20)
-    df["ema50"] = ta.trend.ema_indicator(close, 50)
-    df["rsi"]   = ta.momentum.rsi(close, 14)
-    df["atr"]   = ta.volatility.average_true_range(df["High"], df["Low"], close, 14)
-    df["adx"]   = ta.trend.adx(df["High"], df["Low"], close, 14)
-    return df
+    print("STATUS:", r.status_code)
+    print("RESPONSE:", r.text)
 
-# ==============================
-# VOLATILITY REGIME
-# ==============================
-def get_volatility_regime(df):
-    atr = df["atr"]
-    current = atr.iloc[-1]
-    avg = atr.rolling(20).mean().iloc[-1]
 
-    if current > avg * 1.3:
-        return "HIGH"
-    elif current < avg * 0.7:
-        return "LOW"
-    else:
-        return "NORMAL"
-
-# ==============================
-# DYNAMIC RISK
-# ==============================
-def get_dynamic_risk(base_risk, winrate, vol_regime):
-    risk = base_risk
-
-    if winrate > 70:
-        risk *= 1.3
-    elif winrate < 40:
-        risk *= 0.7
-
-    if vol_regime == "HIGH":
-        risk *= 0.5
-    elif vol_regime == "LOW":
-        risk *= 0.8
-
-    return min(max(risk, 0.005), 0.03)
-
-# ==============================
-# SIGNAL
-# ==============================
-def signal(df, mode):
-    r = df.iloc[-1]
-
-    price = float(r["Close"])
-    ema20, ema50 = r["ema20"], r["ema50"]
-    rsi, atr, adx = r["rsi"], r["atr"], r["adx"]
-
-    if mode == "SAFE":
-        rsi_low, rsi_high = 45, 55
-        atr_mult = 2.0
-    elif mode == "AGGRESSIVE":
-        rsi_low, rsi_high = 30, 70
-        atr_mult = 1.2
-    else:
-        rsi_low, rsi_high = 35, 60
-        atr_mult = 1.5
-
-    if ema20 > ema50 and rsi_low < rsi < rsi_high:
-        sig = "BUY"
-        sl = price - atr_mult * atr
-        tp = price + 2 * atr
-
-    elif ema20 < ema50 and rsi_low < rsi < rsi_high:
-        sig = "SELL"
-        sl = price + atr_mult * atr
-        tp = price - 2 * atr
-
-    else:
-        return "HOLD", price, 0, 0, 0, "LOW"
-
-    rr = abs((tp - price) / (price - sl)) if sig == "BUY" else abs((price - tp) / (sl - price))
-
-    conf = "LOW"
-    if adx > 25 and rr >= 1.5:
-        conf = "HIGH"
-    elif adx > 20:
-        conf = "MEDIUM"
-
-    return sig, price, sl, tp, adx, conf
-
-# ==============================
-# POSITION SIZE
-# ==============================
-def calc_lot(equity, entry, sl, risk_pct):
-    risk_value = equity * risk_pct
-    risk_per_share = abs(entry - sl)
-
-    if risk_per_share == 0:
-        return 0
-
-    shares = risk_value / risk_per_share
-    lot = int(shares / 100)
-
-    max_lot = int(equity / (entry * 100))
-    return max(min(lot, max_lot), 0)
-
-# ==============================
-# CORRELATION FILTER
-# ==============================
-def correlation_filter(data_map, selected, candidate, threshold=0.8):
-    if not selected:
-        return True
-
-    df_cand = data_map[candidate]["Close"]
-
-    for s in selected:
-        df_sel = data_map[s]["Close"]
-        min_len = min(len(df_sel), len(df_cand))
-
-        if min_len < 30:
-            continue
-
-        corr = df_sel[-min_len:].corr(df_cand[-min_len:])
-        if corr > threshold:
-            return False
-
-    return True
-
-# ==============================
-# BACKTEST PORTFOLIO
-# ==============================
-def backtest_portfolio(df, mode):
-    equity = CAPITAL_INIT
-    peak = equity
-
-    active = []
-    trades = []
-
-    for i in range(60, len(df)):
-        drawdown = (equity - peak) / peak
-        if drawdown <= -MAX_DRAWDOWN:
-            break
-
-        peak = max(peak, equity)
-
-        sub = df.iloc[:i]
-        sig, entry, sl, tp, _, _ = signal(sub, mode)
-
-        if sig != "HOLD" and len(active) < MAX_POSITIONS:
-            lot = calc_lot(equity, entry, sl, RISK_PER_TRADE)
-            if lot > 0:
-                active.append({
-                    "type": sig,
-                    "entry": entry,
-                    "sl": sl,
-                    "tp": tp,
-                    "lot": lot
-                })
-
-        new_active = []
-
-        for pos in active:
-            high = df["High"].iloc[i]
-            low  = df["Low"].iloc[i]
-
-            exit_price = None
-
-            if pos["type"] == "BUY":
-                if low <= pos["sl"]:
-                    exit_price = pos["sl"]
-                elif high >= pos["tp"]:
-                    exit_price = pos["tp"]
-
-                if exit_price:
-                    pnl = (exit_price - pos["entry"]) * pos["lot"]
-                    equity += pnl
-                    trades.append(pnl)
-                else:
-                    new_active.append(pos)
-
-            elif pos["type"] == "SELL":
-                if high >= pos["sl"]:
-                    exit_price = pos["sl"]
-                elif low <= pos["tp"]:
-                    exit_price = pos["tp"]
-
-                if exit_price:
-                    pnl = (pos["entry"] - exit_price) * pos["lot"]
-                    equity += pnl
-                    trades.append(pnl)
-                else:
-                    new_active.append(pos)
-
-        active = new_active
-
-    if not trades:
-        return 0, 0, int(equity)
-
-    win = len([t for t in trades if t > 0])
-    winrate = (win / len(trades)) * 100
-
-    return round(winrate,2), len(trades), int(equity)
-
-# ==============================
-# MAIN
-# ==============================
 def run():
-    state = load_state()
-    mode = state["mode"]
-
-    rows = []
-    data_map = {}
+    results = []
 
     for s in STOCKS:
         df = get_data(s)
-        if df is None or len(df) < 50:
+
+        if df is None:
             continue
 
         df = compute(df)
-        data_map[s] = df
 
-        sig, entry, sl, tp, adx, conf = signal(df, mode)
-        winrate, trades, final_cap = backtest_portfolio(df, mode)
+        sig, price = signal(df)
 
-        vol = get_volatility_regime(df)
-        dyn_risk = get_dynamic_risk(RISK_PER_TRADE, winrate, vol)
+        results.append(f"{s} → {sig} @ {round(price,2)}")
 
-        lot = calc_lot(CAPITAL_INIT, entry, sl, dyn_risk)
-
-        score = (
-            winrate * 0.5 +
-            trades * 1.5 +
-            adx * 0.3 +
-            (10 if conf == "HIGH" else 5 if conf == "MEDIUM" else 0)
-        )
-
-        rows.append({
-            "Stock": s,
-            "Signal": sig,
-            "Entry": round(entry,2),
-            "SL": round(sl,2),
-            "TP": round(tp,2),
-            "Lot": lot,
-            "Volatility": vol,
-            "Risk": round(dyn_risk*100,2),
-            "ADX": round(adx,2),
-            "Confidence": conf,
-            "Winrate": winrate,
-            "Trades": trades,
-            "Score": round(score,2)
-        })
-
-    if not rows:
+    if not results:
         send("⚠️ Data kosong")
         return
 
-    df = pd.DataFrame(rows)
-
-    avg = df["Winrate"].mean()
-    if avg < 40:
-        state["mode"] = "SAFE"
-    elif avg > 65:
-        state["mode"] = "AGGRESSIVE"
-    else:
-        state["mode"] = "NORMAL"
-
-    save_state(state)
-
-    df = df[df["Signal"] != "HOLD"]
-    df = df[df["Confidence"] != "LOW"]
-    df = df[df["Winrate"] >= 50]
-    df = df.sort_values("Score", ascending=False)
-
-    selected = []
-    portfolio = []
-
-    for _, row in df.iterrows():
-        if len(portfolio) >= MAX_POSITIONS:
-            break
-
-        if correlation_filter(data_map, selected, row["Stock"]):
-            portfolio.append(row)
-            selected.append(row["Stock"])
-
-    top = pd.DataFrame(portfolio)
-
-    msg = f"🤖 AI PORTFOLIO MODE: {state['mode']}\n"
-    msg += f"📊 Max Posisi: {MAX_POSITIONS}\n\n🔥 TOP PORTFOLIO 🔥\n\n"
-
-    for _, r in top.iterrows():
-        capital = int(r["Lot"] * r["Entry"] * 100)
-
-        msg += (
-            f"{r['Stock']} ({r['Signal']})\n"
-            f"Entry: {r['Entry']} | SL: {r['SL']} | TP: {r['TP']}\n"
-            f"Lot: {r['Lot']} | Capital: {capital}\n"
-            f"Vol: {r['Volatility']} | Risk: {r['Risk']}%\n"
-            f"ADX: {r['ADX']} | Conf: {r['Confidence']}\n"
-            f"Winrate: {r['Winrate']}% | Trades: {r['Trades']}\n"
-            f"Score: {r['Score']}\n\n"
-        )
-
+    msg = "🔥 DAILY SIGNAL 🔥\n\n" + "\n".join(results)
     send(msg)
 
-# ==============================
-# RUN
-# ==============================
+
 if __name__ == "__main__":
     run()
