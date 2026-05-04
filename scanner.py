@@ -8,11 +8,9 @@ from portfolio import (
     calculate_pnl,
     get_equity,
     get_performance,
-    calculate_lot,
     get_expectancy,
     load_trades
 )
-from backtest import run_backtest
 
 
 def send(msg):
@@ -30,7 +28,6 @@ def send(msg):
             "chat_id": CHAT_ID,
             "text": msg
         })
-
         print("STATUS:", r.status_code)
         print("RESP:", r.text)
 
@@ -66,7 +63,9 @@ def run():
 
         r = df.iloc[-1]
 
+        # =========================
         # 🔥 FILTER
+        # =========================
         if r["adx"] < 15:
             continue
 
@@ -74,7 +73,9 @@ def run():
         if distance < 0.005:
             continue
 
+        # =========================
         # 🔥 SCORING
+        # =========================
         score = 0
 
         if market == "BEAR" and sig == "SELL":
@@ -86,33 +87,58 @@ def run():
 
         score += int(r["adx"] / 10)
 
-        exit_price, _ = run_backtest(df, sig, price)
-        if exit_price is None:
-            continue
+        # =========================
+        # 🔥 RISK MANAGEMENT (RR 1:2)
+        # =========================
+        risk_pct = 0.02
+        reward_pct = 0.04
 
+        if sig == "SELL":
+            sl = price * (1 + risk_pct)
+            tp = price * (1 - reward_pct)
+        else:
+            sl = price * (1 - risk_pct)
+            tp = price * (1 + reward_pct)
+
+        # =========================
+        # 🔥 PILIH TERBAIK
+        # =========================
         if score > best_score:
             best_score = score
             best_trade = {
                 "stock": s,
                 "signal": sig,
                 "price": price,
-                "exit": exit_price
+                "sl": sl,
+                "tp": tp
             }
 
+    # =========================
     # ❌ TIDAK ADA SINYAL
+    # =========================
     if best_trade is None:
         msg = f"📊 MARKET: {market}\n\n⚠️ Tidak ada sinyal hari ini\n\n💰 EQUITY: {int(equity)}"
         send(msg)
         return
 
+    # =========================
     # 💰 EXECUTE TRADE
+    # =========================
     s = best_trade["stock"]
     sig = best_trade["signal"]
     price = best_trade["price"]
-    exit_price = best_trade["exit"]
+    sl = best_trade["sl"]
+    tp = best_trade["tp"]
 
-    sl = price * (1.03 if sig == "SELL" else 0.97)
-    lot = calculate_lot(price, sl, equity)
+    # 🔥 POSITION SIZING (MAX LOSS 2%)
+    risk_amount = equity * 0.02
+    lot = int(risk_amount / abs(price - sl))
+
+    if lot < 1:
+        lot = 1
+
+    # 🔥 PAKAI TP SEBAGAI TARGET EXIT
+    exit_price = tp
 
     pnl = calculate_pnl(price, exit_price, sig, lot)
 
@@ -128,7 +154,7 @@ def run():
     save_trade(trade_data)
 
     results.append(
-        f"{s} → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | Lot {lot} | PnL {round(pnl,2)} | Score {best_score}"
+        f"{s} → {sig} @ {round(price,2)} | TP {round(tp,2)} | SL {round(sl,2)} | Lot {lot} | PnL {round(pnl,2)} | Score {best_score}"
     )
 
     log_data.append({
