@@ -6,7 +6,6 @@ LOG_FILE = "log.csv"
 
 def save_log(data):
     df = pd.DataFrame(data)
-
     df["date"] = datetime.now().strftime("%Y-%m-%d")
 
     if os.path.exists(LOG_FILE):
