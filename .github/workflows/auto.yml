@@ -9,6 +9,10 @@ jobs:
   run:
     runs-on: ubuntu-latest
 
+    env:   # 🔥 INI KUNCI NYA
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      CHAT_ID: ${{ secrets.CHAT_ID }}
+
     steps:
     - uses: actions/checkout@v4
 
