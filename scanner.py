@@ -22,7 +22,6 @@ CHAT_ID   = os.getenv("CHAT_ID")
 
 def send(msg):
     if not BOT_TOKEN or not CHAT_ID:
-        print("❌ BOT_TOKEN / CHAT_ID tidak terbaca")
         return
 
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -30,11 +29,8 @@ def send(msg):
 
 
 def run():
-    print("🚀 START SCANNER")
-
     equity = get_equity()
 
-    # 🔥 STOP kalau equity habis
     if equity <= 0:
         send("❌ SYSTEM STOP - Equity habis")
         return
@@ -48,44 +44,39 @@ def run():
 
     for s in STOCKS:
         df = compute(get_data(s))
-        if df is None or df.empty:
+        if df is None:
             continue
 
         sig, price = signal(df)
 
-        if sig == "HOLD" or price is None:
+        if sig == "HOLD":
             continue
 
-        strategy = choose_strategy(df)
+        # ===== FILTER JARAK (hindari entry jelek)
+        distance = abs(price - df.iloc[-1]["ema20"]) / price
+        if distance < 0.005:
+            continue
 
-        # =========================
-        # 🔥 SMART MARKET BIAS
-        # =========================
+        # ===== MARKET BIAS SCORE
         score = 0
-
-        if market == "BULL" and sig == "BUY":
+        if market == "BEAR" and sig == "SELL":
             score += 2
-        elif market == "BEAR" and sig == "SELL":
+        elif market == "BULL" and sig == "BUY":
             score += 2
         else:
-            score -= 1
+            score += 1  # masih boleh
 
-        # minimal kualitas trade
-        if score < 0:
-            continue
-
-        # ===== BACKTEST =====
-        exit_price, result = run_backtest(df, sig, price)
+        # ===== BACKTEST
+        exit_price, _ = run_backtest(df, sig, price)
         if exit_price is None:
             continue
 
-        # ===== RISK =====
+        # ===== RISK
         sl = price * (1.03 if sig == "SELL" else 0.97)
         lot = calculate_lot(price, sl, equity)
 
-        # 🔥 BOOST kalau searah market
         if score >= 2:
-            lot = int(lot * 1.5)
+            lot = int(lot * 1.3)
 
         pnl = calculate_pnl(price, exit_price, sig, lot)
 
@@ -101,7 +92,7 @@ def run():
         save_trade(trade_data)
 
         results.append(
-            f"{s} [{strategy}] → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | Lot {lot} | PnL {round(pnl,2)} | Score {score}"
+            f"{s} → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | Lot {lot} | PnL {round(pnl,2)}"
         )
 
         log_data.append({
@@ -112,6 +103,10 @@ def run():
 
         trade_count += 1
 
+        # 🔥 BATASI TRADE (ANTI OVERTRADE)
+        if trade_count >= 2:
+            break
+
     if trade_count == 0:
         send(f"⚠️ MARKET: {market}\nTidak ada sinyal hari ini")
         return
@@ -121,9 +116,7 @@ def run():
     stats = get_stats()
     equity = get_equity()
     perf = get_performance()
-
-    trades = load_trades()
-    exp = get_expectancy(trades)
+    exp = get_expectancy(load_trades())
 
     msg = f"📊 MARKET: {market}\n\n🔥 SIGNAL 🔥\n\n"
     msg += "\n".join(results)
