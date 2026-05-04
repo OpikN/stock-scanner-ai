@@ -3,7 +3,7 @@
 # ==============================
 import yfinance as yf
 import pandas as pd
-import requests, os, json
+import requests, os, json, time
 import ta
 
 # ==============================
@@ -18,18 +18,14 @@ CAPITAL_INIT = 10_000_000
 STATE_FILE = "state.json"
 
 # ==============================
-# STATE (AI MEMORY)
+# STATE
 # ==============================
 def load_state():
     try:
         with open(STATE_FILE) as f:
             return json.load(f)
     except:
-        return {
-            "mode":"NORMAL",
-            "last_winrate":0,
-            "last_capital":CAPITAL_INIT
-        }
+        return {"mode":"NORMAL","last_winrate":0}
 
 def save_state(state):
     with open(STATE_FILE,"w") as f:
@@ -42,9 +38,33 @@ def send(msg):
     if not BOT_TOKEN or not CHAT_ID:
         print("❌ Secret tidak terbaca")
         return
-
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+
+# ==============================
+# SAFE DOWNLOAD (ANTI ERROR)
+# ==============================
+def get_data(symbol):
+    for i in range(3):
+        try:
+            df = yf.download(symbol, period="6mo", interval="1d", progress=False, threads=False)
+
+            if df is None or df.empty:
+                print("Retry kosong:", symbol)
+                time.sleep(2)
+                continue
+
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
+            print("OK:", symbol, "Rows:", len(df))
+            return df
+
+        except Exception as e:
+            print("Retry error:", symbol, e)
+            time.sleep(2)
+
+    return None
 
 # ==============================
 # INDICATOR
@@ -58,7 +78,7 @@ def compute(df):
     return df
 
 # ==============================
-# ADAPTIVE SIGNAL
+# SIGNAL ADAPTIVE
 # ==============================
 def signal(df, mode):
     r = df.iloc[-1]
@@ -143,16 +163,16 @@ def run():
     rows = []
 
     for s in STOCKS:
+        df = get_data(s)
+
+        if df is None or len(df) < 50:
+            print("Skip:", s)
+            continue
+
         try:
-            df = yf.download(s, period="6mo", progress=False)
-
-            if df is None or len(df) < 80:
-                continue
-
             df = compute(df)
 
             sig, entry, sl, tp = signal(df, mode)
-
             winrate, trades, final_cap = backtest(df, mode)
 
             score = winrate * 0.6 + trades * 2
@@ -165,20 +185,19 @@ def run():
                 "TP": round(tp,2),
                 "Winrate": winrate,
                 "Trades": trades,
-                "FinalCap": final_cap,
                 "Score": round(score,2)
             })
 
         except Exception as e:
-            print("ERR", s, e)
+            print("ERR:", s, e)
 
     if not rows:
-        send("⚠️ Data kosong")
+        send("⚠️ Data kosong (API error / market libur)")
         return
 
     df = pd.DataFrame(rows)
 
-    # ADAPTIVE UPDATE MODE
+    # UPDATE MODE
     avg_winrate = df["Winrate"].mean()
 
     if avg_winrate < 40:
@@ -188,26 +207,14 @@ def run():
     else:
         state["mode"] = "NORMAL"
 
-    state["last_winrate"] = avg_winrate
     save_state(state)
 
-    # FILTER
-    df = df[df["Signal"] != "HOLD"]
-
-    if df.empty:
-        df = pd.DataFrame(rows)
-
     df = df.sort_values("Score", ascending=False)
-
     top = df.head(3)
 
-    # SAVE
-    top.to_csv("data.csv", index=False)
-
-    # TELEGRAM
     msg = f"🤖 MODE: {state['mode']}\n\n🔥 TOP SIGNAL 🔥\n\n"
 
-    for i, r in top.iterrows():
+    for _, r in top.iterrows():
         msg += (
             f"{r['Stock']} ({r['Signal']})\n"
             f"Entry: {r['Entry']} | SL: {r['SL']} | TP: {r['TP']}\n"
