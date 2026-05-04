@@ -10,7 +10,6 @@ def get_data(symbol):
     for _ in range(3):
         try:
             df = yf.download(symbol, period="6mo", interval="1d", progress=False)
-
             if df is None or df.empty:
                 time.sleep(2)
                 continue
