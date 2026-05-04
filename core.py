@@ -73,12 +73,13 @@ def get_market_regime(df):
     return "SIDEWAYS"
 
 
-# ===== SIGNAL (AI ADAPTIVE FINAL) =====
+# ===== SIGNAL (AI + CONFIRMATION) =====
 def signal(df):
-    if df is None or df.empty:
+    if df is None or df.empty or len(df) < 2:
         return "HOLD", None
 
     r = df.iloc[-1]
+    prev = df.iloc[-2]
 
     price = r["Close"]
 
@@ -97,28 +98,40 @@ def signal(df):
 
     strategy = choose_strategy(df)
 
-    # ===== TREND STRATEGY =====
+    # =========================
+    # 🔥 TREND STRATEGY (CONFIRMATION)
+    # =========================
     if strategy == "TREND":
-        if ema20 < ema50 and r["Close"] > ema20:
-            return "SELL", price
-        if ema20 > ema50 and r["Close"] < ema20:
-            return "BUY", price
 
-    # ===== SIDEWAYS STRATEGY =====
+        # SELL (trend turun + konfirmasi turun)
+        if ema20 < ema50:
+            if (
+                r["Close"] < prev["Close"] and
+                r["Close"] < ema20 and
+                rsi > 55 and
+                adx > 20
+            ):
+                return "SELL", price
+
+        # BUY (trend naik + konfirmasi naik)
+        if ema20 > ema50:
+            if (
+                r["Close"] > prev["Close"] and
+                r["Close"] > ema20 and
+                rsi < 45 and
+                adx > 20
+            ):
+                return "BUY", price
+
+    # =========================
+    # 🔥 SIDEWAYS STRATEGY
+    # =========================
     elif strategy == "SIDEWAYS":
-        if rsi > 65:
+
+        if rsi > 70:
             return "SELL", price
-        if rsi < 35:
+
+        if rsi < 30:
             return "BUY", price
-
-    # ===== FALLBACK =====
-    if adx < 10:
-        return "HOLD", price
-
-    if ema20 > ema50:
-        return "BUY", price
-
-    if ema20 < ema50:
-        return "SELL", price
 
     return "HOLD", price
