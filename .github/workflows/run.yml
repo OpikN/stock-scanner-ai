@@ -14,19 +14,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      # 1. Ambil repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Setup Python
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - name: Install
+      # 3. Install dependencies
+      - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run
+      # 4. Jalankan scanner
+      - name: Run scanner
         run: python scanner.py
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
+
+      # 5. Commit hasil trades & log ke repo
+      - name: Commit results (trades.csv & log.csv)
+        run: |
+          git config --global user.name "auto-bot"
+          git config --global user.email "bot@users.noreply.github.com"
+          
+          git add trades.csv log.csv || true
+          
+          git commit -m "auto update data" || echo "No changes to commit"
+          
+          git push
