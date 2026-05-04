@@ -75,6 +75,39 @@ def compute(df):
     return df
 
 # ==============================
+# VOLATILITY REGIME
+# ==============================
+def get_volatility_regime(df):
+    atr = df["atr"]
+    current = atr.iloc[-1]
+    avg = atr.rolling(20).mean().iloc[-1]
+
+    if current > avg * 1.3:
+        return "HIGH"
+    elif current < avg * 0.7:
+        return "LOW"
+    else:
+        return "NORMAL"
+
+# ==============================
+# DYNAMIC RISK
+# ==============================
+def get_dynamic_risk(base_risk, winrate, vol_regime):
+    risk = base_risk
+
+    if winrate > 70:
+        risk *= 1.3
+    elif winrate < 40:
+        risk *= 0.7
+
+    if vol_regime == "HIGH":
+        risk *= 0.5
+    elif vol_regime == "LOW":
+        risk *= 0.8
+
+    return min(max(risk, 0.005), 0.03)
+
+# ==============================
 # SIGNAL
 # ==============================
 def signal(df, mode):
@@ -120,8 +153,8 @@ def signal(df, mode):
 # ==============================
 # POSITION SIZE
 # ==============================
-def calc_lot(equity, entry, sl):
-    risk_value = equity * RISK_PER_TRADE
+def calc_lot(equity, entry, sl, risk_pct):
+    risk_value = equity * risk_pct
     risk_per_share = abs(entry - sl)
 
     if risk_per_share == 0:
@@ -176,7 +209,7 @@ def backtest_portfolio(df, mode):
         sig, entry, sl, tp, _, _ = signal(sub, mode)
 
         if sig != "HOLD" and len(active) < MAX_POSITIONS:
-            lot = calc_lot(equity, entry, sl)
+            lot = calc_lot(equity, entry, sl, RISK_PER_TRADE)
             if lot > 0:
                 active.append({
                     "type": sig,
@@ -250,7 +283,11 @@ def run():
 
         sig, entry, sl, tp, adx, conf = signal(df, mode)
         winrate, trades, final_cap = backtest_portfolio(df, mode)
-        lot = calc_lot(CAPITAL_INIT, entry, sl)
+
+        vol = get_volatility_regime(df)
+        dyn_risk = get_dynamic_risk(RISK_PER_TRADE, winrate, vol)
+
+        lot = calc_lot(CAPITAL_INIT, entry, sl, dyn_risk)
 
         score = (
             winrate * 0.5 +
@@ -266,6 +303,8 @@ def run():
             "SL": round(sl,2),
             "TP": round(tp,2),
             "Lot": lot,
+            "Volatility": vol,
+            "Risk": round(dyn_risk*100,2),
             "ADX": round(adx,2),
             "Confidence": conf,
             "Winrate": winrate,
@@ -279,7 +318,6 @@ def run():
 
     df = pd.DataFrame(rows)
 
-    # adaptive mode
     avg = df["Winrate"].mean()
     if avg < 40:
         state["mode"] = "SAFE"
@@ -290,34 +328,25 @@ def run():
 
     save_state(state)
 
-    # filter
     df = df[df["Signal"] != "HOLD"]
     df = df[df["Confidence"] != "LOW"]
     df = df[df["Winrate"] >= 50]
-
     df = df.sort_values("Score", ascending=False)
 
-    # smart portfolio
     selected = []
     portfolio = []
 
     for _, row in df.iterrows():
-        stock = row["Stock"]
-
         if len(portfolio) >= MAX_POSITIONS:
             break
 
-        if correlation_filter(data_map, selected, stock):
+        if correlation_filter(data_map, selected, row["Stock"]):
             portfolio.append(row)
-            selected.append(stock)
+            selected.append(row["Stock"])
 
     top = pd.DataFrame(portfolio)
 
-    label = "REAL SIGNAL" if not top.empty else "ALTERNATIF"
-
-    # telegram
-    msg = f"🤖 AI PORTFOLIO MODE: {state['mode']} | {label}\n"
-    msg += f"🧠 Smart Allocation Aktif\n"
+    msg = f"🤖 AI PORTFOLIO MODE: {state['mode']}\n"
     msg += f"📊 Max Posisi: {MAX_POSITIONS}\n\n🔥 TOP PORTFOLIO 🔥\n\n"
 
     for _, r in top.iterrows():
@@ -327,6 +356,7 @@ def run():
             f"{r['Stock']} ({r['Signal']})\n"
             f"Entry: {r['Entry']} | SL: {r['SL']} | TP: {r['TP']}\n"
             f"Lot: {r['Lot']} | Capital: {capital}\n"
+            f"Vol: {r['Volatility']} | Risk: {r['Risk']}%\n"
             f"ADX: {r['ADX']} | Conf: {r['Confidence']}\n"
             f"Winrate: {r['Winrate']}% | Trades: {r['Trades']}\n"
             f"Score: {r['Score']}\n\n"
