@@ -8,7 +8,6 @@ STOCKS = ["BBCA.JK","BBRI.JK","TLKM.JK","BMRI.JK","ASII.JK"]
 IHSG = "^JKSE"
 
 
-# ===== GET DATA =====
 def get_data(symbol):
     for _ in range(3):
         try:
@@ -24,19 +23,16 @@ def get_data(symbol):
             df = df.dropna()
 
             if df.empty:
-                time.sleep(2)
                 continue
 
             return df
 
-        except Exception as e:
-            print("ERROR GET DATA:", symbol, e)
+        except:
             time.sleep(2)
 
     return None
 
 
-# ===== COMPUTE =====
 def compute(df):
     try:
         close = df["Close"]
@@ -49,20 +45,15 @@ def compute(df):
         df = df.dropna()
         return df
 
-    except Exception as e:
-        print("ERROR COMPUTE:", e)
+    except:
         return None
 
 
-# ===== MARKET REGIME =====
 def get_market_regime(df):
     if df is None or df.empty:
         return "SIDEWAYS"
 
     r = df.iloc[-1]
-
-    if pd.isna(r["ema20"]) or pd.isna(r["ema50"]) or pd.isna(r["adx"]):
-        return "SIDEWAYS"
 
     if r["ema20"] > r["ema50"] and r["adx"] > 25:
         return "BULL"
@@ -73,74 +64,50 @@ def get_market_regime(df):
     return "SIDEWAYS"
 
 
-# ===== SIGNAL (FINAL AI SYSTEM) =====
+# 🔥 FINAL SIGNAL SYSTEM
 def signal(df):
-    if df is None or df.empty or len(df) < 2:
+    if df is None or len(df) < 2:
         return "HOLD", None
 
     r = df.iloc[-1]
     prev = df.iloc[-2]
 
-    price = r["Close"]
-
-    if price is None or pd.isna(price):
-        return "HOLD", None
-
-    price = float(price)
+    price = float(r["Close"])
 
     ema20 = r["ema20"]
     ema50 = r["ema50"]
-    rsi   = r["rsi"]
     adx   = r["adx"]
+    rsi   = r["rsi"]
 
-    if pd.isna(ema20) or pd.isna(ema50) or pd.isna(rsi) or pd.isna(adx):
+    if pd.isna(ema20) or pd.isna(ema50) or pd.isna(adx):
         return "HOLD", price
 
     strategy = choose_strategy(df)
 
     # =========================
-    # 🔥 PRIMARY SIGNAL (AI)
+    # 🔥 TREND = BREAKOUT SYSTEM
     # =========================
     if strategy == "TREND":
 
-        # SELL (trend turun + konfirmasi fleksibel)
+        # SELL (BREAKDOWN)
         if ema20 < ema50:
-            if (
-                (r["Close"] < prev["Close"] or r["Close"] < ema20)
-                and rsi > 50
-                and adx > 15
-            ):
+            if r["Close"] < prev["Low"] and adx > 15:
                 return "SELL", price
 
-        # BUY (trend naik + konfirmasi fleksibel)
+        # BUY (BREAKOUT)
         if ema20 > ema50:
-            if (
-                (r["Close"] > prev["Close"] or r["Close"] > ema20)
-                and rsi < 50
-                and adx > 15
-            ):
+            if r["Close"] > prev["High"] and adx > 15:
                 return "BUY", price
 
     # =========================
-    # 🔥 SIDEWAYS STRATEGY
+    # 🔥 SIDEWAYS
     # =========================
     elif strategy == "SIDEWAYS":
 
-        if rsi > 65:
+        if rsi > 70:
             return "SELL", price
 
-        if rsi < 35:
+        if rsi < 30:
             return "BUY", price
-
-    # =========================
-    # 🛟 FALLBACK (ANTI NO SIGNAL)
-    # =========================
-    # selalu ada minimal arah
-
-    if ema20 > ema50:
-        return "BUY", price
-
-    if ema20 < ema50:
-        return "SELL", price
 
     return "HOLD", price
