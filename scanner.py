@@ -1,13 +1,17 @@
 import os
 import requests
+
 from core import *
 from logger import save_log, get_stats
 from portfolio import save_trade, calculate_pnl, get_equity, get_performance
+from backtest import run_backtest
+
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID   = os.getenv("CHAT_ID")
 
 
+# ===== TELEGRAM =====
 def send(msg):
     if not BOT_TOKEN or not CHAT_ID:
         print("❌ BOT_TOKEN / CHAT_ID tidak terbaca")
@@ -17,13 +21,14 @@ def send(msg):
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
 
+# ===== MAIN =====
 def run():
-    print("🚀 RUN SCANNER")
+    print("🚀 START SCANNER")
 
-    # ===== MARKET =====
+    # ===== MARKET CHECK =====
     ihsg = get_data(IHSG)
     if ihsg is None:
-        send("❌ Gagal ambil IHSG")
+        send("❌ Gagal ambil data IHSG")
         return
 
     ihsg = compute(ihsg)
@@ -35,7 +40,7 @@ def run():
     log_data = []
     trade_count = 0
 
-    # ===== SCAN =====
+    # ===== SCAN STOCK =====
     for s in STOCKS:
         print("SCAN:", s)
 
@@ -45,36 +50,40 @@ def run():
             continue
 
         df = compute(df)
+        if df is None or df.empty:
+            continue
+
         sig, price = signal(df)
 
         print("SIGNAL:", sig, "PRICE:", price)
+
+        # ===== VALIDASI PRICE =====
+        if price is None or price == 0:
+            print("❌ PRICE INVALID:", s)
+            continue
 
         # ===== FILTER MARKET =====
         if market == "BULL" and sig == "SELL":
             continue
         if market == "BEAR" and sig == "BUY":
             continue
+        # SIDEWAYS tetap allow supaya ada data
 
-        # ❗ SIDEWAYS tetap diizinkan supaya ada data
-        # if market == "SIDEWAYS": continue  ← DIHAPUS
-
-        # ===== VALIDASI =====
-        if price is None or price == 0:
+        if sig == "HOLD":
             continue
 
-        # ===== TRADE SIMULATION =====
+        # ===== BACKTEST REAL =====
+        exit_price, result = run_backtest(df, sig, price)
+
+        if exit_price is None:
+            print("❌ BACKTEST GAGAL:", s)
+            continue
+
         lot = 1
-
-        if sig == "BUY":
-            exit_price = price * 1.02
-        elif sig == "SELL":
-            exit_price = price * 0.98
-        else:
-            continue
 
         pnl = calculate_pnl(price, exit_price, sig, lot)
 
-        # ===== SAVE TRADE (WAJIB LENGKAP) =====
+        # ===== SAVE TRADE =====
         trade_data = {
             "Stock": s,
             "Signal": sig,
@@ -84,11 +93,13 @@ def run():
             "PnL": round(float(pnl), 2)
         }
 
-        print("SAVE TRADE:", trade_data)
+        print("SAVE:", trade_data)
 
         save_trade(trade_data)
 
-        results.append(f"{s} → {sig} @ {round(price,2)}")
+        results.append(
+            f"{s} → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | PnL {round(pnl,2)}"
+        )
 
         log_data.append({
             "Stock": s,
@@ -98,17 +109,17 @@ def run():
 
         trade_count += 1
 
-    # ===== FALLBACK (AGAR FILE TIDAK KOSONG) =====
+    # ===== FALLBACK (AGAR DASHBOARD TIDAK KOSONG) =====
     if trade_count == 0:
-        print("⚠️ TIDAK ADA TRADE, BUAT DUMMY")
+        print("⚠️ TIDAK ADA TRADE → BUAT DUMMY")
 
         dummy = {
             "Stock": "BBCA.JK",
             "Signal": "BUY",
             "Entry": 100,
-            "Exit": 102,
+            "Exit": 98,
             "Lot": 1,
-            "PnL": 200
+            "PnL": -200
         }
 
         save_trade(dummy)
@@ -119,13 +130,14 @@ def run():
     # ===== SAVE LOG =====
     save_log(log_data)
 
-    # ===== MESSAGE =====
-    msg = f"📊 MARKET: {market}\n\n🔥 SIGNAL 🔥\n\n"
-    msg += "\n".join(results)
-
+    # ===== STATS =====
     stats = get_stats()
     equity = get_equity()
     perf = get_performance()
+
+    # ===== TELEGRAM MESSAGE =====
+    msg = f"📊 MARKET: {market}\n\n🔥 SIGNAL 🔥\n\n"
+    msg += "\n".join(results)
 
     msg += f"\n\n📊 STATS:\n{stats}"
     msg += f"\n\n💰 EQUITY: {int(equity)}"
