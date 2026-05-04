@@ -2,6 +2,7 @@ import yfinance as yf
 import pandas as pd
 import ta
 import time
+from ai_strategy import choose_strategy
 
 STOCKS = ["BBCA.JK","BBRI.JK","TLKM.JK","BMRI.JK","ASII.JK"]
 IHSG = "^JKSE"
@@ -11,18 +12,12 @@ IHSG = "^JKSE"
 def get_data(symbol):
     for _ in range(3):
         try:
-            df = yf.download(
-                symbol,
-                period="6mo",
-                interval="1d",
-                progress=False
-            )
+            df = yf.download(symbol, period="6mo", interval="1d", progress=False)
 
             if df is None or df.empty:
                 time.sleep(2)
                 continue
 
-            # FIX multi index
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
@@ -52,7 +47,6 @@ def compute(df):
         df["adx"]   = ta.trend.adx(df["High"], df["Low"], close, window=14)
 
         df = df.dropna()
-
         return df
 
     except Exception as e:
@@ -79,54 +73,52 @@ def get_market_regime(df):
     return "SIDEWAYS"
 
 
-# ===== SIGNAL (PULLBACK SYSTEM) =====
+# ===== SIGNAL (AI ADAPTIVE FINAL) =====
 def signal(df):
-    if df is None or df.empty or len(df) < 3:
+    if df is None or df.empty:
         return "HOLD", None
 
     r = df.iloc[-1]
-    prev = df.iloc[-2]
 
     price = r["Close"]
 
-    # ===== VALIDASI PRICE =====
     if price is None or pd.isna(price):
         return "HOLD", None
 
-    try:
-        price = float(price)
-    except:
-        return "HOLD", None
+    price = float(price)
 
     ema20 = r["ema20"]
     ema50 = r["ema50"]
     rsi   = r["rsi"]
     adx   = r["adx"]
 
-    # ===== VALIDASI INDIKATOR =====
     if pd.isna(ema20) or pd.isna(ema50) or pd.isna(rsi) or pd.isna(adx):
         return "HOLD", price
 
-    # ===== FILTER TREND LEMAH =====
-    if adx < 20:
+    strategy = choose_strategy(df)
+
+    # ===== TREND STRATEGY =====
+    if strategy == "TREND":
+        if ema20 < ema50 and r["Close"] > ema20:
+            return "SELL", price
+        if ema20 > ema50 and r["Close"] < ema20:
+            return "BUY", price
+
+    # ===== SIDEWAYS STRATEGY =====
+    elif strategy == "SIDEWAYS":
+        if rsi > 65:
+            return "SELL", price
+        if rsi < 35:
+            return "BUY", price
+
+    # ===== FALLBACK =====
+    if adx < 10:
         return "HOLD", price
 
-    # =========================
-    # 🔻 SELL (PULLBACK)
-    # =========================
-    if ema20 < ema50:
-        # harga naik ke EMA20 → entry SELL
-        if prev["Close"] < prev["ema20"] and r["Close"] > r["ema20"]:
-            if rsi > 55:  # konfirmasi overbought kecil
-                return "SELL", price
-
-    # =========================
-    # 🔺 BUY (PULLBACK)
-    # =========================
     if ema20 > ema50:
-        # harga turun ke EMA20 → entry BUY
-        if prev["Close"] > prev["ema20"] and r["Close"] < r["ema20"]:
-            if rsi < 45:  # konfirmasi oversold kecil
-                return "BUY", price
+        return "BUY", price
+
+    if ema20 < ema50:
+        return "SELL", price
 
     return "HOLD", price
