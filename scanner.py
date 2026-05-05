@@ -44,7 +44,7 @@ def get_dynamic_risk(trades):
     loss_count = sum(1 for t in last if float(t["PnL"]) < 0)
 
     if loss_count >= 2:
-        return 0.01  # turun risk
+        return 0.01
 
     return 0.02
 
@@ -92,7 +92,6 @@ def simulate_trailing(df, signal, entry):
             if price >= sl:
                 return sl
 
-    # fallback
     return entry * (1.01 if signal == "BUY" else 0.99)
 
 
@@ -123,21 +122,32 @@ def run():
         r = df.iloc[-1]
 
         # =========================
-        # 🔥 FILTER KUALITAS (PENTING)
+        # 🔥 FILTER KUALITAS
         # =========================
-
-        # Trend kuat
         if r["adx"] < 20:
             continue
 
-        # Hindari sideways
         if abs(r["ema20"] - r["ema50"]) / r["ema50"] < 0.003:
             continue
 
-        # Hindari entry terlalu dekat EMA
         distance = abs(price - r["ema20"]) / price
         if distance < 0.01:
             continue
+
+        # =========================
+        # 🔥 PULLBACK ENTRY (FIX LOSS)
+        # =========================
+        if sig == "SELL":
+            if price > r["ema20"]:
+                continue
+            if (r["ema20"] - price) / r["ema20"] > 0.02:
+                continue
+
+        elif sig == "BUY":
+            if price < r["ema20"]:
+                continue
+            if (price - r["ema20"]) / r["ema20"] > 0.02:
+                continue
 
         # =========================
 
@@ -162,7 +172,6 @@ def run():
             "df": df
         })
 
-    # 🔥 ambil max 2 terbaik
     candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:2]
 
     if not candidates:
@@ -179,7 +188,6 @@ def run():
         sl = trade["sl"]
         df = trade["df"]
 
-        # 🔥 LOT CONTROL
         risk_amount = equity * risk_pct
         lot = int(risk_amount / abs(price - sl))
 
@@ -188,9 +196,7 @@ def run():
         if lot < 1:
             lot = 1
 
-        # 🔥 EXIT ENGINE
         exit_price = simulate_trailing(df, sig, price)
-
         pnl = calculate_pnl(price, exit_price, sig, lot)
 
         trade_data = {
