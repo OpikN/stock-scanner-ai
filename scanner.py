@@ -82,7 +82,7 @@ def run():
         prev = df.iloc[-2]
 
         # =========================
-        # 🔥 HIGH QUALITY FILTER
+        # 🔥 FILTER
         # =========================
         if r["adx"] < 15:
             continue
@@ -91,7 +91,7 @@ def run():
             continue
 
         # =========================
-        # 🔥 PULLBACK ENTRY
+        # 🔥 PULLBACK
         # =========================
         if sig == "SELL":
             if price > r["ema20"]:
@@ -106,7 +106,7 @@ def run():
                 continue
 
         # =========================
-        # 🔥 RSI + CANDLE CONFIRM
+        # 🔥 RSI + CANDLE
         # =========================
         if sig == "SELL":
             if not (prev["rsi"] > r["rsi"] and 40 < r["rsi"] < 60):
@@ -147,55 +147,12 @@ def run():
         })
 
     # =========================
-    # 🔥 ADAPTIVE FALLBACK MODE
+    # 🔥 ADAPTIVE FALLBACK
     # =========================
     if not candidates:
+        send(f"📊 MARKET: {market}\n\n⚠️ Tidak ada sinyal berkualitas hari ini\n\n💰 EQUITY: {int(equity)}")
+        return
 
-        fallback = []
-
-        for s in STOCKS:
-            df = compute(get_data(s))
-            if df is None:
-                continue
-
-            sig, price = signal(df)
-            if sig == "HOLD":
-                continue
-
-            r = df.iloc[-1]
-
-            if r["adx"] < 10:
-                continue
-
-            if sig == "SELL":
-                sl = price * 1.02
-                tp = price * 0.96
-            else:
-                sl = price * 0.98
-                tp = price * 1.04
-
-            score = int(r["adx"] / 10)
-
-            fallback.append({
-                "stock": s,
-                "signal": sig,
-                "price": price,
-                "sl": sl,
-                "tp": tp,
-                "score": score
-            })
-
-        fallback = sorted(fallback, key=lambda x: x["score"], reverse=True)[:1]
-
-        if not fallback:
-            send(f"📊 MARKET: {market}\n\n⚠️ Tidak ada sinyal sama sekali\n\n💰 EQUITY: {int(equity)}")
-            return
-
-        candidates = fallback
-
-    # =========================
-    # 🔥 EXECUTION
-    # =========================
     candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:2]
 
     results = []
@@ -230,6 +187,11 @@ def run():
 
         save_trade(trade_data)
 
+        # =========================
+        # 🔥 MONITORING LOG
+        # =========================
+        print(f"[LOG] {s} | {sig} | Entry {price} | TP {tp} | SL {sl} | Lot {lot} | PnL {pnl}")
+
         results.append(
             f"{s} → {sig} @ {round(price,2)} | TP {round(tp,2)} | SL {round(sl,2)} | Lot {lot} | PnL {round(pnl,2)}"
         )
@@ -253,6 +215,11 @@ def run():
     msg += f"\n\n💰 EQUITY: {int(equity)}"
     msg += f"\n📈 PERFORMANCE:\n{perf}"
     msg += f"\n📊 EXPECTANCY: {exp}"
+
+    # =========================
+    # 🔥 RISK MODE INFO
+    # =========================
+    msg += f"\n⚙️ RISK MODE: {risk_pct*100}%"
 
     send(msg)
 
