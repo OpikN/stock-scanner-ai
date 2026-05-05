@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 import yfinance as yf
 import time
 import os
@@ -15,7 +14,7 @@ RISK_PER_TRADE = 0.02
 TRADE_FILE = "trades.csv"
 LOG_FILE = "scanner_log.csv"
 
-# 🔥 ENV TELEGRAM
+# ENV TELEGRAM
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -57,12 +56,14 @@ def load_trades():
 
 def save_trade(trade):
     df = load_trades()
-    df = pd.concat([df, pd.DataFrame([trade])], ignore_index=True)
+    new_row = pd.DataFrame([trade])
+    df = pd.concat([df, new_row], ignore_index=True)
     df.to_csv(TRADE_FILE, index=False)
 
 def save_log(data):
     df = pd.read_csv(LOG_FILE)
-    df = pd.concat([df, pd.DataFrame([data])], ignore_index=True)
+    new_row = pd.DataFrame([data])
+    df = pd.concat([df, new_row], ignore_index=True)
     df.to_csv(LOG_FILE, index=False)
 
 # =========================
@@ -81,7 +82,7 @@ def compute_indicators(df):
     return df
 
 # =========================
-# SIGNAL (FIX ERROR SERIES)
+# SIGNAL (NO WARNING VERSION)
 # =========================
 def generate_signal(df):
     last = df.iloc[-1]
@@ -143,7 +144,6 @@ def run_scanner():
 
             df = yf.download(s, period="1mo", interval="1d", progress=False)
 
-            # ✅ FIX WAJIB
             if df is None or df.empty:
                 print(f"⚠️ skip {s}")
                 continue
@@ -172,7 +172,8 @@ def run_scanner():
             lot = calculate_position_size(equity, price, sl)
             pnl = (tp - price) * lot if signal == "BUY" else (price - tp) * lot
 
-            if score > best_score:
+            # 🔥 FIX AGAR SELL MASUK
+            if best_trade is None or abs(score) > abs(best_score):
                 best_score = score
                 best_trade = {
                     "Time": time.time(),
