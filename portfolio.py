@@ -40,10 +40,8 @@ def save_trade(trade):
 def calculate_pnl(entry, exit_price, signal, lot):
     if signal == "BUY":
         return (exit_price - entry) * lot
-
     elif signal == "SELL":
         return (entry - exit_price) * lot
-
     return 0
 
 
@@ -52,7 +50,6 @@ def calculate_pnl(entry, exit_price, signal, lot):
 # =========================
 def get_equity():
     trades = load_trades()
-
     equity = START_EQUITY
 
     for t in trades:
@@ -75,7 +72,6 @@ def get_performance():
 
     for t in trades:
         pnl = float(t["PnL"])
-
         if pnl > 0:
             win += 1
         elif pnl < 0:
@@ -88,11 +84,15 @@ def get_performance():
 
 
 # =========================
-# EXPECTANCY (FIXED)
+# EXPECTANCY (FIXED + last_n)
 # =========================
-def get_expectancy(trades):
-    if not trades or len(trades) == 0:
+def get_expectancy(trades, last_n=None):
+    if not trades:
         return 0
+
+    # 🔥 kalau pakai last_n
+    if last_n is not None:
+        trades = trades[-last_n:]
 
     wins = []
     losses = []
@@ -106,6 +106,10 @@ def get_expectancy(trades):
             losses.append(abs(pnl))
 
     total = len(trades)
+
+    if total == 0:
+        return 0
+
     winrate = len(wins) / total
     lossrate = len(losses) / total
 
@@ -118,7 +122,7 @@ def get_expectancy(trades):
 
 
 # =========================
-# OPTIONAL: LOT CALCULATOR (fallback)
+# OPTIONAL LOT CALCULATOR
 # =========================
 def calculate_lot(price, sl, equity):
     risk_amount = equity * 0.02
