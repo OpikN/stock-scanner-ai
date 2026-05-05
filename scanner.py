@@ -11,6 +11,8 @@ STOCKS = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
 INITIAL_CAPITAL = 10000000
 RISK_PER_TRADE = 0.02
 
+MAX_LOT = 100  # 🔥 BATAS MAKSIMAL LOT
+
 TRADE_FILE = "trades.csv"
 LOG_FILE = "scanner_log.csv"
 
@@ -21,7 +23,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 # INIT FILE
 # =========================
 if not os.path.exists(TRADE_FILE):
-    pd.DataFrame(columns=["Time","Stock","Signal","Entry","TP","SL","PnL"]).to_csv(TRADE_FILE, index=False)
+    pd.DataFrame(columns=["Time","Stock","Signal","Entry","TP","SL","Lot","PnL"]).to_csv(TRADE_FILE, index=False)
 
 if not os.path.exists(LOG_FILE):
     pd.DataFrame(columns=["Time","Stock","Price","Signal","Score"]).to_csv(LOG_FILE, index=False)
@@ -80,7 +82,7 @@ def compute_indicators(df):
     return df
 
 # =========================
-# SIGNAL ENGINE (UPGRADE)
+# SIGNAL ENGINE
 # =========================
 def generate_signal(df):
     last = df.iloc[-1]
@@ -93,25 +95,18 @@ def generate_signal(df):
 
     score = 0
 
-    # 🔥 TREND FILTER (WAJIB)
-    if price > ema_trend:
-        trend = "BULL"
-    else:
-        trend = "BEAR"
+    # Trend
+    trend = "BULL" if price > ema_trend else "BEAR"
 
-    # 🔥 EMA CROSS
-    if ema_fast > ema_slow:
-        score += 1
-    else:
-        score -= 1
+    # EMA
+    score += 1 if ema_fast > ema_slow else -1
 
-    # 🔥 RSI FILTER
+    # RSI
     if rsi > 55:
         score += 1
     elif rsi < 45:
         score -= 1
 
-    # 🔥 FINAL DECISION (FILTER TREND)
     if score >= 2 and trend == "BULL":
         return "BUY", score, trend
     elif score <= -2 and trend == "BEAR":
@@ -120,12 +115,15 @@ def generate_signal(df):
     return "HOLD", score, trend
 
 # =========================
-# LOT SIZE
+# LOT SIZE (SAFE VERSION)
 # =========================
 def calculate_position_size(equity, entry, sl):
     risk = equity * RISK_PER_TRADE
     diff = abs(entry - sl)
-    return int(risk / diff) if diff != 0 else 0
+
+    lot = int(risk / diff) if diff != 0 else 0
+
+    return min(lot, MAX_LOT)
 
 # =========================
 # MAIN
@@ -172,11 +170,12 @@ def run_scanner():
             if signal == "HOLD":
                 continue
 
-            # 🔥 SL & TP (RR 1:2)
+            # RR 1:2
             sl = price * 0.98 if signal == "BUY" else price * 1.02
             tp = price * 1.04 if signal == "BUY" else price * 0.96
 
             lot = calculate_position_size(equity, price, sl)
+
             pnl = (tp - price) * lot if signal == "BUY" else (price - tp) * lot
 
             if best_trade is None or abs(score) > abs(best_score):
@@ -188,6 +187,7 @@ def run_scanner():
                     "Entry": price,
                     "TP": tp,
                     "SL": sl,
+                    "Lot": lot,
                     "PnL": pnl,
                     "Score": score,
                     "Trend": trend
@@ -211,10 +211,12 @@ def run_scanner():
 🛑 SL: {best_trade['SL']:.0f}
 
 ⚖️ RR: 1:2
-📊 Confidence: {best_trade['Score']}/2
+📊 Confidence: {abs(best_trade['Score'])}/2
+📦 Lot: {best_trade['Lot']}
 
 💵 Est. PnL: {best_trade['PnL']:.0f}
 """
+
         send_telegram(msg)
 
         print("🔥 SIGNAL SENT")
