@@ -1,145 +1,219 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import requests
 import time
+import os
 
 st.set_page_config(layout="wide")
 
 INITIAL_CAPITAL = 10000000
+REFRESH_RATE = 5
 
-# AUTO REFRESH
-refresh_rate = 10  # detik
+# =========================
+# AUTO CREATE trades.csv
+# =========================
+if not os.path.exists("trades.csv"):
+    df_init = pd.DataFrame(columns=["Stock","Signal","Entry","Exit","PnL"])
+    df_init.to_csv("trades.csv", index=False)
 
+# =========================
+# COINS
+# =========================
+COINS = ["bitcoin", "ethereum", "solana"]
+
+# =========================
+# GET LIVE PRICE
+# =========================
+def get_prices():
+    url = "https://api.coingecko.com/api/v3/simple/price"
+    params = {
+        "ids": ",".join(COINS),
+        "vs_currencies": "usd"
+    }
+    return requests.get(url, params=params).json()
+
+# =========================
+# PERFORMANCE MODE
+# =========================
+def get_performance_mode(df):
+    if len(df) < 10:
+        return "BALANCED"
+
+    recent = df.tail(10)
+    win = len(recent[recent["PnL"] > 0])
+    winrate = win / len(recent) * 100
+
+    if winrate >= 70:
+        return "AGGRESSIVE"
+    elif winrate <= 40:
+        return "DEFENSIVE"
+    else:
+        return "BALANCED"
+
+# =========================
+# PARAMETER ADAPTIVE
+# =========================
+def get_params(mode):
+    if mode == "AGGRESSIVE":
+        return {"rsi_buy": 52, "rsi_sell": 48, "ema_fast": 5, "ema_slow": 9}
+    elif mode == "DEFENSIVE":
+        return {"rsi_buy": 60, "rsi_sell": 40, "ema_fast": 8, "ema_slow": 15}
+    else:
+        return {"rsi_buy": 55, "rsi_sell": 45, "ema_fast": 6, "ema_slow": 12}
+
+# =========================
+# INDICATOR
+# =========================
+def compute_indicators(prices, ema_fast, ema_slow):
+    df = pd.DataFrame(prices, columns=["price"])
+
+    df["ema_fast"] = df["price"].ewm(span=ema_fast).mean()
+    df["ema_slow"] = df["price"].ewm(span=ema_slow).mean()
+
+    delta = df["price"].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(7).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(7).mean()
+    rs = gain / (loss + 1e-9)
+    df["rsi"] = 100 - (100 / (1 + rs))
+
+    return df
+
+# =========================
+# SIGNAL ENGINE
+# =========================
+def generate_signal(prices, trades_df):
+    mode = get_performance_mode(trades_df)
+    params = get_params(mode)
+
+    if len(prices) < 20:
+        return "HOLD", mode, 0
+
+    df = compute_indicators(prices, params["ema_fast"], params["ema_slow"])
+    last = df.iloc[-1]
+
+    score = 0
+
+    # TREND
+    if last["ema_fast"] > last["ema_slow"]:
+        score += 1
+    else:
+        score -= 1
+
+    # RSI
+    if last["rsi"] > params["rsi_buy"]:
+        score += 1
+    elif last["rsi"] < params["rsi_sell"]:
+        score -= 1
+
+    # SIDEWAYS FILTER
+    spread = abs(last["ema_fast"] - last["ema_slow"])
+    if spread < last["price"] * 0.002:
+        return "HOLD", mode, 0
+
+    if score >= 2:
+        return "BUY", mode, score
+    elif score <= -2:
+        return "SELL", mode, score
+    else:
+        return "HOLD", mode, score
+
+# =========================
+# SESSION STATE
+# =========================
+if "price_history" not in st.session_state:
+    st.session_state.price_history = {c: [] for c in COINS}
+
+# =========================
+# MAIN LOOP
+# =========================
 placeholder = st.empty()
 
 while True:
     with placeholder.container():
 
-        st.markdown("## 🔥 AI Opik Trading PRO")
+        st.title("🔥 AI Trading Dashboard PRO")
 
         # =========================
-        # LOAD DATA
+        # LOAD TRADES
         # =========================
-        try:
-            df = pd.read_csv("trades.csv")
-        except:
-            st.warning("trades.csv belum ada")
-            time.sleep(refresh_rate)
-            st.rerun()
+        trades_df = pd.read_csv("trades.csv")
 
-        if df.empty:
-            st.warning("Belum ada trade")
-            time.sleep(refresh_rate)
-            st.rerun()
+        if not trades_df.empty:
+            trades_df["PnL"] = pd.to_numeric(trades_df["PnL"], errors="coerce")
+            trades_df["Equity"] = trades_df["PnL"].cumsum() + INITIAL_CAPITAL
 
-        # =========================
-        # PREP DATA
-        # =========================
-        df["PnL"] = pd.to_numeric(df["PnL"], errors="coerce")
-        df["Equity"] = df["PnL"].cumsum() + INITIAL_CAPITAL
+            total = len(trades_df)
+            win = len(trades_df[trades_df["PnL"] > 0])
+            winrate = (win / total) * 100 if total > 0 else 0
+            equity = trades_df["Equity"].iloc[-1]
 
-        df["Win"] = df["PnL"] > 0
+        else:
+            total, winrate, equity = 0, 0, INITIAL_CAPITAL
 
         # =========================
         # METRICS
         # =========================
-        total = len(df)
-        win = df["Win"].sum()
-        loss = total - win
-        winrate = (win / total) * 100 if total > 0 else 0
-
-        avg_win = df[df["PnL"] > 0]["PnL"].mean() if win > 0 else 0
-        avg_loss = df[df["PnL"] < 0]["PnL"].mean() if loss > 0 else 0
-
-        expectancy = (winrate/100 * avg_win) + ((1 - winrate/100) * avg_loss)
-
-        equity = df["Equity"].iloc[-1]
-
-        # DRAW DOWN
-        peak = df["Equity"].cummax()
-        drawdown = df["Equity"] - peak
-        max_dd = drawdown.min()
-
-        # =========================
-        # TOP METRICS
-        # =========================
-        col1, col2, col3, col4, col5 = st.columns(5)
-
-        col1.metric("💰 Equity", f"{int(equity):,}")
-        col2.metric("📊 Trades", total)
-        col3.metric("🏆 Winrate", f"{winrate:.2f}%")
-        col4.metric("📈 Expectancy", round(expectancy, 2))
-        col5.metric("⚠️ Max DD", int(max_dd))
+        c1, c2, c3 = st.columns(3)
+        c1.metric("💰 Equity", f"{int(equity):,}")
+        c2.metric("📊 Trades", total)
+        c3.metric("🏆 Winrate", f"{winrate:.2f}%")
 
         st.divider()
 
         # =========================
-        # CHARTS
+        # LIVE COIN + SIGNAL
         # =========================
-        colA, colB = st.columns(2)
+        st.subheader("🚀 Live Market + AI Signal")
 
-        with colA:
-            st.subheader("💰 Equity Curve")
-            st.line_chart(df["Equity"])
+        prices = get_prices()
+        cols = st.columns(len(COINS))
 
-        with colB:
-            st.subheader("📉 Drawdown")
-            st.line_chart(drawdown)
+        for i, coin in enumerate(COINS):
+            price = prices[coin]["usd"]
+
+            st.session_state.price_history[coin].append(price)
+            hist = st.session_state.price_history[coin]
+
+            signal, mode, score = generate_signal(hist, trades_df)
+
+            color = "white"
+            if signal == "BUY":
+                color = "green"
+            elif signal == "SELL":
+                color = "red"
+
+            with cols[i]:
+                st.metric(coin.upper(), f"${price}")
+                st.markdown(f"Mode: **{mode}**")
+                st.markdown(f"Signal: :{color}[{signal}]")
+                st.markdown(f"Score: {score}")
+                st.line_chart(hist[-50:])
 
         st.divider()
 
         # =========================
-        # DAILY PNL
+        # EQUITY CHART
         # =========================
-        st.subheader("📊 Daily PnL")
-        df["Date"] = pd.date_range(end=pd.Timestamp.today(), periods=len(df))
-        daily = df.groupby(df["Date"].dt.date)["PnL"].sum()
-
-        st.bar_chart(daily)
+        if not trades_df.empty:
+            st.subheader("📈 Equity Curve")
+            st.line_chart(trades_df["Equity"])
 
         st.divider()
 
         # =========================
-        # FILTER STOCK
-        # =========================
-        st.subheader("🔍 Filter per Saham")
-
-        stocks = df["Stock"].unique()
-        selected = st.selectbox("Pilih Saham", stocks)
-
-        df_stock = df[df["Stock"] == selected]
-
-        colC, colD = st.columns(2)
-
-        with colC:
-            st.write("Trade Detail")
-            st.dataframe(df_stock.tail(10))
-
-        with colD:
-            st.write("Equity per Saham")
-            st.line_chart(df_stock["PnL"].cumsum())
-
-        st.divider()
-
-        # =========================
-        # DISTRIBUTION
-        # =========================
-        st.subheader("📊 PnL Distribution")
-        st.bar_chart(df["PnL"])
-
-        st.divider()
-
-        # =========================
-        # TRADE TABLE
+        # LAST TRADES
         # =========================
         st.subheader("🧾 Last Trades")
 
-        def highlight_pnl(val):
-            color = "green" if val > 0 else "red"
-            return f"color: {color}"
+        if not trades_df.empty:
+            def highlight(val):
+                color = "green" if val > 0 else "red"
+                return f"color: {color}"
 
-        st.dataframe(
-            df.tail(15).style.applymap(highlight_pnl, subset=["PnL"])
-        )
+            st.dataframe(
+                trades_df.tail(10).style.applymap(highlight, subset=["PnL"])
+            )
 
-    time.sleep(refresh_rate)
+    time.sleep(REFRESH_RATE)
+    st.rerun()
