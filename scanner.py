@@ -1,5 +1,6 @@
 import os
 import requests
+import traceback
 
 from core import *
 from logger import save_log, get_stats
@@ -28,8 +29,8 @@ def send(msg):
             "chat_id": CHAT_ID,
             "text": msg
         })
-    except:
-        pass
+    except Exception as e:
+        print("ERROR TELEGRAM:", e)
 
 
 # =========================
@@ -40,21 +41,19 @@ def get_dynamic_risk(trades):
         return 0.02
 
     last = trades[-3:]
-
     loss_count = sum(1 for t in last if float(t["PnL"]) < 0)
 
     if loss_count >= 2:
-        return 0.01  # turun risk
+        return 0.01
 
     return 0.02
 
 
 # =========================
-# 🔥 TRAILING STOP SIMULATION
+# 🔥 TRAILING STOP
 # =========================
 def simulate_trailing(df, signal, entry):
     trail_pct = 0.02
-
     best_price = entry
     stop = entry
 
@@ -116,7 +115,6 @@ def run():
         elif market == "BULL" and sig == "BUY":
             score += 3
 
-        # RR BASE
         if sig == "SELL":
             sl = price * (1 + risk_pct)
         else:
@@ -132,7 +130,7 @@ def run():
         })
 
     # =========================
-    # 🔥 PILIH TOP 2 TRADE
+    # 🔥 SORT & PILIH TOP 2
     # =========================
     candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:2]
 
@@ -141,6 +139,7 @@ def run():
         return
 
     results = []
+    log_data = []
 
     for trade in candidates:
         s = trade["stock"]
@@ -150,7 +149,7 @@ def run():
         df = trade["df"]
 
         # =========================
-        # 🔥 LOT (SAFE)
+        # 🔥 LOT CONTROL
         # =========================
         risk_amount = equity * risk_pct
         lot = int(risk_amount / abs(price - sl))
@@ -182,7 +181,14 @@ def run():
             f"{s} → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | Lot {lot} | PnL {round(pnl,2)}"
         )
 
-    save_log([{"Stock": r.split()[0]} for r in results])
+        log_data.append({
+            "Stock": s,
+            "Signal": sig,
+            "Entry": round(price, 2)
+        })
+
+    # ✅ FIX: tidak error lagi
+    save_log(log_data)
 
     stats = get_stats()
     equity = get_equity()
@@ -200,4 +206,9 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    try:
+        run()
+    except Exception as e:
+        print("ERROR:", e)
+        print(traceback.format_exc())
+        send(f"❌ ERROR:\n{e}")
