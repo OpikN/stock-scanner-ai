@@ -49,52 +49,6 @@ def get_dynamic_risk(trades):
     return 0.02
 
 
-# =========================
-# 🔥 TRAILING + TP/SL
-# =========================
-def simulate_trailing(df, signal, entry):
-    trail_pct = 0.02
-    tp_pct = 0.04
-    sl_pct = 0.02
-
-    best_price = entry
-
-    for i in range(-20, 0):
-        price = df.iloc[i]["Close"]
-
-        if signal == "BUY":
-            if price > best_price:
-                best_price = price
-
-            trailing_stop = best_price * (1 - trail_pct)
-            tp = entry * (1 + tp_pct)
-            sl = entry * (1 - sl_pct)
-
-            if price <= trailing_stop:
-                return trailing_stop
-            if price >= tp:
-                return tp
-            if price <= sl:
-                return sl
-
-        elif signal == "SELL":
-            if price < best_price:
-                best_price = price
-
-            trailing_stop = best_price * (1 + trail_pct)
-            tp = entry * (1 - tp_pct)
-            sl = entry * (1 + sl_pct)
-
-            if price >= trailing_stop:
-                return trailing_stop
-            if price <= tp:
-                return tp
-            if price >= sl:
-                return sl
-
-    return entry * (1.01 if signal == "BUY" else 0.99)
-
-
 def run():
     equity = get_equity()
     trades = load_trades()
@@ -162,6 +116,14 @@ def run():
                 continue
 
         # =========================
+        # 🔥 SMART SL + TP (RR 1:2)
+        # =========================
+        if sig == "SELL":
+            sl = price * 1.02
+            tp = price * 0.96
+        else:
+            sl = price * 0.98
+            tp = price * 1.04
 
         score = int(r["adx"] / 10)
 
@@ -170,16 +132,12 @@ def run():
         elif market == "BULL" and sig == "BUY":
             score += 3
 
-        if sig == "SELL":
-            sl = price * (1 + risk_pct)
-        else:
-            sl = price * (1 - risk_pct)
-
         candidates.append({
             "stock": s,
             "signal": sig,
             "price": price,
             "sl": sl,
+            "tp": tp,
             "score": score,
             "df": df
         })
@@ -207,11 +165,19 @@ def run():
 
             score = int(r["adx"] / 10)
 
+            if sig == "SELL":
+                sl = price * 1.02
+                tp = price * 0.96
+            else:
+                sl = price * 0.98
+                tp = price * 1.04
+
             fallback.append({
                 "stock": s,
                 "signal": sig,
                 "price": price,
-                "sl": price * (1.02 if sig == "SELL" else 0.98),
+                "sl": sl,
+                "tp": tp,
                 "score": score,
                 "df": df
             })
@@ -224,7 +190,7 @@ def run():
 
         candidates = fallback
 
-    # ambil max 2 terbaik
+    # ambil max 2
     candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:2]
 
     results = []
@@ -235,8 +201,9 @@ def run():
         sig = trade["signal"]
         price = trade["price"]
         sl = trade["sl"]
-        df = trade["df"]
+        tp = trade["tp"]
 
+        # 🔥 LOT CONTROL
         risk_amount = equity * risk_pct
         lot = int(risk_amount / abs(price - sl))
 
@@ -245,7 +212,11 @@ def run():
         if lot < 1:
             lot = 1
 
-        exit_price = simulate_trailing(df, sig, price)
+        # =========================
+        # 🔥 EXIT = TP (BACKTEST MODE)
+        # =========================
+        exit_price = tp
+
         pnl = calculate_pnl(price, exit_price, sig, lot)
 
         trade_data = {
@@ -260,7 +231,7 @@ def run():
         save_trade(trade_data)
 
         results.append(
-            f"{s} → {sig} @ {round(price,2)} | Exit {round(exit_price,2)} | Lot {lot} | PnL {round(pnl,2)}"
+            f"{s} → {sig} @ {round(price,2)} | TP {round(tp,2)} | SL {round(sl,2)} | Lot {lot} | PnL {round(pnl,2)}"
         )
 
         log_data.append({
@@ -276,7 +247,7 @@ def run():
     perf = get_performance()
     exp = get_expectancy(load_trades(), last_n=20)
 
-    msg = f"📊 MARKET: {market}\n\n🔥 MULTI TRADE 🔥\n\n"
+    msg = f"📊 MARKET: {market}\n\n🔥 MULTI TRADE (RR 1:2) 🔥\n\n"
     msg += "\n".join(results)
     msg += f"\n\n📊 STATS:\n{stats}"
     msg += f"\n\n💰 EQUITY: {int(equity)}"
