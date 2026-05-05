@@ -15,7 +15,7 @@ RISK_PER_TRADE = 0.02
 TRADE_FILE = "trades.csv"
 LOG_FILE = "scanner_log.csv"
 
-# 🔥 AMBIL DARI GITHUB SECRETS
+# 🔥 ENV TELEGRAM
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -81,17 +81,25 @@ def compute_indicators(df):
     return df
 
 # =========================
-# SIGNAL
+# SIGNAL (FIX ERROR SERIES)
 # =========================
 def generate_signal(df):
     last = df.iloc[-1]
+
+    ema_fast = float(last["ema_fast"])
+    ema_slow = float(last["ema_slow"])
+    rsi = float(last["rsi"])
+
     score = 0
 
-    score += 1 if last["ema_fast"] > last["ema_slow"] else -1
-
-    if last["rsi"] > 55:
+    if ema_fast > ema_slow:
         score += 1
-    elif last["rsi"] < 45:
+    else:
+        score -= 1
+
+    if rsi > 55:
+        score += 1
+    elif rsi < 45:
         score -= 1
 
     if score >= 1:
@@ -114,7 +122,6 @@ def calculate_position_size(equity, entry, sl):
 def run_scanner():
     print("🚀 SCANNER START")
 
-    # 🔥 DEBUG TELEGRAM
     print("TOKEN:", TELEGRAM_TOKEN)
     print("CHAT_ID:", TELEGRAM_CHAT_ID)
 
@@ -136,7 +143,7 @@ def run_scanner():
 
             df = yf.download(s, period="1mo", interval="1d", progress=False)
 
-            # ✅ FIX ERROR SERIES
+            # ✅ FIX WAJIB
             if df is None or df.empty:
                 print(f"⚠️ skip {s}")
                 continue
@@ -144,7 +151,7 @@ def run_scanner():
             df = compute_indicators(df)
 
             signal, score = generate_signal(df)
-            price = df["Close"].iloc[-1]
+            price = float(df["Close"].iloc[-1])
 
             save_log({
                 "Time": time.time(),
@@ -194,7 +201,7 @@ TP {best_trade['Exit']:.0f}
         print("⚠️ No signal")
 
 # =========================
-# RUN SEKALI (UNTUK GITHUB)
+# RUN
 # =========================
 if __name__ == "__main__":
     run_scanner()
