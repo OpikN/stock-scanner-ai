@@ -23,6 +23,17 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # =========================
+# SAFE FLOAT 🔥 (ANTI ERROR)
+# =========================
+def safe_float(x):
+    try:
+        if hasattr(x, "iloc"):
+            return float(x.iloc[0])
+        return float(x)
+    except:
+        return 0.0
+
+# =========================
 # TELEGRAM
 # =========================
 def send_telegram(msg):
@@ -63,7 +74,6 @@ def compute_indicators(df):
     rs = gain / (loss + 1e-9)
     df["rsi"] = 100 - (100 / (1 + rs))
 
-    # ATR
     df["tr"] = np.maximum.reduce([
         df["High"] - df["Low"],
         abs(df["High"] - df["Close"].shift()),
@@ -77,13 +87,13 @@ def compute_indicators(df):
 # SIGNAL ENGINE
 # =========================
 def generate_signal(df):
-    last = df.iloc[-1]
+    last = df.iloc[-1:]
 
-    ema_fast = float(last["ema_fast"])
-    ema_slow = float(last["ema_slow"])
-    ema_trend = float(last["ema_trend"])
-    rsi = float(last["rsi"])
-    price = float(last["Close"])
+    ema_fast = safe_float(last["ema_fast"])
+    ema_slow = safe_float(last["ema_slow"])
+    ema_trend = safe_float(last["ema_trend"])
+    rsi = safe_float(last["rsi"])
+    price = safe_float(last["Close"])
 
     score = 0
 
@@ -96,23 +106,19 @@ def generate_signal(df):
     elif rsi < 45:
         score -= 1
 
-    # =========================
-    # FILTER TAMBAHAN 🔥
-    # =========================
-
-    # 1. TREND STRENGTH
+    # 🔥 TREND STRENGTH
     strength = abs(ema_fast - ema_slow) / price
     if strength < 0.003:
         return "HOLD", score, trend
 
-    # 2. VOLUME FILTER
-    volume_now = df["Volume"].iloc[-1]
-    volume_avg = df["Volume"].rolling(10).mean().iloc[-1]
+    # 🔥 VOLUME FILTER (FIXED)
+    volume_now = safe_float(df["Volume"].iloc[-1:])
+    volume_avg = safe_float(df["Volume"].rolling(10).mean().iloc[-1:])
 
     if volume_now < volume_avg:
         return "HOLD", score, trend
 
-    # 3. CANDLE STRENGTH
+    # 🔥 CANDLE FILTER
     candle = df.iloc[-1]
     body = abs(candle["Close"] - candle["Open"])
     range_candle = candle["High"] - candle["Low"]
@@ -137,18 +143,16 @@ def calculate_lot(equity, entry, sl):
     return min(lot, MAX_LOT)
 
 # =========================
-# ANTI LOSS SYSTEM
+# ANTI LOSS
 # =========================
 def check_risk(trades):
     if trades.empty:
         return True
 
-    # LOSS STREAK
     last = trades.tail(MAX_LOSS_STREAK)
     if len(last) == MAX_LOSS_STREAK and all(last["PnL"] < 0):
         return False
 
-    # DAILY LOSS
     if trades.tail(10)["PnL"].sum() < INITIAL_CAPITAL * MAX_DAILY_LOSS:
         return False
 
@@ -180,23 +184,21 @@ def run():
             df = compute_indicators(df)
 
             signal, score, trend = generate_signal(df)
-            price = float(df["Close"].iloc[-1])
-            atr = float(df["atr"].iloc[-1])
+            price = safe_float(df["Close"].iloc[-1:])
+            atr = safe_float(df["atr"].iloc[-1:])
 
             if signal == "HOLD":
                 continue
 
-            # =========================
-            # SMART ENTRY 🔥
-            # =========================
+            # 🔥 SMART ENTRY
             if signal == "BUY":
                 entry = price - (0.3 * atr)
                 sl = entry - (1 * atr)
-                tp = entry + (1.5 * atr if abs(score) == 2 else 2 * atr)
+                tp = entry + (1.5 * atr)
             else:
                 entry = price + (0.3 * atr)
                 sl = entry + (1 * atr)
-                tp = entry - (1.5 * atr if abs(score) == 2 else 2 * atr)
+                tp = entry - (1.5 * atr)
 
             lot = calculate_lot(equity, entry, sl)
 
