@@ -1,91 +1,115 @@
 import streamlit as st
 import pandas as pd
-import os
+import yfinance as yf
+import plotly.graph_objects as go
 import time
+import os
 
 st.set_page_config(layout="wide")
 
-INITIAL_CAPITAL = 10000000
-REFRESH_RATE = 5
-
-TRADE_FILE = "trades.csv"
-LOG_FILE = "scanner_log.csv"
+st.title("📊 AI TRADING DASHBOARD PRO")
 
 # =========================
-# INIT
+# AUTO REFRESH 🔥
 # =========================
-if not os.path.exists(TRADE_FILE):
-    pd.DataFrame(columns=["Time","Stock","Signal","Entry","Exit","PnL"]).to_csv(TRADE_FILE, index=False)
+refresh_rate = 10  # detik
+st.caption(f"Auto refresh tiap {refresh_rate} detik")
+time.sleep(refresh_rate)
+st.rerun()
 
-placeholder = st.empty()
+# =========================
+# LOAD TRADE DATA
+# =========================
+if os.path.exists("trades.csv"):
+    trades = pd.read_csv("trades.csv")
+else:
+    trades = pd.DataFrame()
 
-while True:
-    with placeholder.container():
+# =========================
+# PILIH STOCK
+# =========================
+stocks = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
+selected = st.selectbox("Pilih Stock", stocks)
 
-        st.title("🔥 AI Trading Dashboard PRO (LIVE)")
+# =========================
+# GET DATA LIVE
+# =========================
+df = yf.download(selected, period="1mo", interval="1h")
 
-        # =========================
-        # STATUS
-        # =========================
-        c1, c2 = st.columns(2)
-        c1.metric("🧠 Scanner", "RUNNING")
-        c2.metric("⏱️ Last Update", time.strftime("%H:%M:%S"))
+if df.empty:
+    st.warning("Data tidak tersedia")
+    st.stop()
 
-        st.divider()
+# =========================
+# CANDLESTICK CHART 🔥
+# =========================
+fig = go.Figure()
 
-        # =========================
-        # LIVE SCANNER LOG
-        # =========================
-        st.subheader("⚡ Live Scanner Activity")
+fig.add_trace(go.Candlestick(
+    x=df.index,
+    open=df["Open"],
+    high=df["High"],
+    low=df["Low"],
+    close=df["Close"],
+    name="Price"
+))
 
-        if os.path.exists(LOG_FILE):
-            log_df = pd.read_csv(LOG_FILE)
+# =========================
+# TAMBAH SIGNAL DARI CSV 🔥
+# =========================
+if not trades.empty:
+    stock_trades = trades[trades["Stock"] == selected]
 
-            if not log_df.empty:
-                log_df = log_df.sort_values("Time", ascending=False)
+    for _, t in stock_trades.iterrows():
+        fig.add_trace(go.Scatter(
+            x=[pd.to_datetime(t["Time"], unit='s')],
+            y=[t["Entry"]],
+            mode="markers+text",
+            marker=dict(size=12),
+            text=[t["Signal"]],
+            name="Signal"
+        ))
 
-                def color(val):
-                    if val == "BUY":
-                        return "color: green"
-                    elif val == "SELL":
-                        return "color: red"
-                    return "color: gray"
+# =========================
+# LAYOUT CHART
+# =========================
+fig.update_layout(
+    height=600,
+    xaxis_rangeslider_visible=False,
+    template="plotly_dark"
+)
 
-                st.dataframe(
-                    log_df.head(20).style.applymap(color, subset=["Signal"])
-                )
-            else:
-                st.info("Scanner aktif... belum ada data")
-        else:
-            st.warning("Log belum ada")
+st.plotly_chart(fig, use_container_width=True)
 
-        st.divider()
+# =========================
+# LIVE PRICE 🔥
+# =========================
+price = df["Close"].iloc[-1]
+prev = df["Close"].iloc[-2]
 
-        # =========================
-        # TRADES
-        # =========================
-        st.subheader("📊 Trade Performance")
+col1, col2, col3 = st.columns(3)
 
-        df = pd.read_csv(TRADE_FILE)
+col1.metric("💰 Harga", f"{price:.0f}", f"{price-prev:.0f}")
+col2.metric("📊 High", f"{df['High'].iloc[-1]:.0f}")
+col3.metric("📉 Low", f"{df['Low'].iloc[-1]:.0f}")
 
-        if not df.empty:
-            df["PnL"] = pd.to_numeric(df["PnL"], errors="coerce")
-            df["Equity"] = df["PnL"].cumsum() + INITIAL_CAPITAL
+# =========================
+# TRADE TABLE
+# =========================
+st.subheader("📜 Trade History")
 
-            total = len(df)
-            win = len(df[df["PnL"] > 0])
-            winrate = (win / total) * 100 if total > 0 else 0
-            equity = df["Equity"].iloc[-1]
+if trades.empty:
+    st.warning("Belum ada trade dari scanner")
+else:
+    st.dataframe(trades.tail(10))
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("💰 Equity", f"{int(equity):,}")
-            c2.metric("📊 Trades", total)
-            c3.metric("🏆 Winrate", f"{winrate:.2f}%")
+# =========================
+# STATUS SYSTEM
+# =========================
+st.subheader("🤖 System Status")
 
-            st.line_chart(df["Equity"])
-
-        else:
-            st.warning("Belum ada trade")
-
-    time.sleep(REFRESH_RATE)
-    st.rerun()
+if trades.empty:
+    st.info("Menunggu signal dari AI...")
+else:
+    last = trades.iloc[-1]
+    st.success(f"Signal terakhir: {last['Stock']} {last['Signal']}")
