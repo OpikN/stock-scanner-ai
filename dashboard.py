@@ -23,15 +23,19 @@ if not os.path.exists("trades.csv"):
 COINS = ["bitcoin", "ethereum", "solana"]
 
 # =========================
-# GET LIVE PRICE
+# GET LIVE PRICE (SAFE)
 # =========================
 def get_prices():
-    url = "https://api.coingecko.com/api/v3/simple/price"
-    params = {
-        "ids": ",".join(COINS),
-        "vs_currencies": "usd"
-    }
-    return requests.get(url, params=params).json()
+    try:
+        url = "https://api.coingecko.com/api/v3/simple/price"
+        params = {
+            "ids": ",".join(COINS),
+            "vs_currencies": "usd"
+        }
+        res = requests.get(url, params=params, timeout=5)
+        return res.json()
+    except:
+        return {}
 
 # =========================
 # PERFORMANCE MODE
@@ -94,19 +98,16 @@ def generate_signal(prices, trades_df):
 
     score = 0
 
-    # TREND
     if last["ema_fast"] > last["ema_slow"]:
         score += 1
     else:
         score -= 1
 
-    # RSI
     if last["rsi"] > params["rsi_buy"]:
         score += 1
     elif last["rsi"] < params["rsi_sell"]:
         score -= 1
 
-    # SIDEWAYS FILTER
     spread = abs(last["ema_fast"] - last["ema_slow"])
     if spread < last["price"] * 0.002:
         return "HOLD", mode, 0
@@ -132,7 +133,7 @@ placeholder = st.empty()
 while True:
     with placeholder.container():
 
-        st.title("🔥 AI Trading Dashboard PRO")
+        st.title("🔥 AI Trading Dashboard PRO (STABLE)")
 
         # =========================
         # LOAD TRADES
@@ -147,7 +148,6 @@ while True:
             win = len(trades_df[trades_df["PnL"] > 0])
             winrate = (win / total) * 100 if total > 0 else 0
             equity = trades_df["Equity"].iloc[-1]
-
         else:
             total, winrate, equity = 0, 0, INITIAL_CAPITAL
 
@@ -162,7 +162,7 @@ while True:
         st.divider()
 
         # =========================
-        # LIVE COIN + SIGNAL
+        # LIVE MARKET
         # =========================
         st.subheader("🚀 Live Market + AI Signal")
 
@@ -170,7 +170,15 @@ while True:
         cols = st.columns(len(COINS))
 
         for i, coin in enumerate(COINS):
-            price = prices[coin]["usd"]
+
+            data = prices.get(coin, {})
+            price = data.get("usd", 0)
+
+            if price == 0:
+                with cols[i]:
+                    st.metric(coin.upper(), "N/A")
+                    st.warning("API error / limit")
+                continue
 
             st.session_state.price_history[coin].append(price)
             hist = st.session_state.price_history[coin]
@@ -193,7 +201,7 @@ while True:
         st.divider()
 
         # =========================
-        # EQUITY CHART
+        # EQUITY
         # =========================
         if not trades_df.empty:
             st.subheader("📈 Equity Curve")
@@ -202,7 +210,7 @@ while True:
         st.divider()
 
         # =========================
-        # LAST TRADES
+        # TRADES
         # =========================
         st.subheader("🧾 Last Trades")
 
