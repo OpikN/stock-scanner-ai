@@ -15,7 +15,7 @@ RISK_PER_TRADE = 0.02
 TRADE_FILE = "trades.csv"
 LOG_FILE = "scanner_log.csv"
 
-# 🔥 TELEGRAM (pakai ENV biar aman di GitHub)
+# 🔥 AMBIL DARI GITHUB SECRETS
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -29,9 +29,13 @@ if not os.path.exists(LOG_FILE):
     pd.DataFrame(columns=["Time","Stock","Price","Signal","Score"]).to_csv(LOG_FILE, index=False)
 
 # =========================
-# TELEGRAM FUNCTION (DEBUG)
+# TELEGRAM
 # =========================
 def send_telegram(msg):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("❌ TELEGRAM ENV NOT SET")
+        return
+
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         res = requests.post(url, data={
@@ -39,14 +43,14 @@ def send_telegram(msg):
             "text": msg
         })
 
-        print("📨 TELEGRAM STATUS:", res.status_code)
-        print("📨 TELEGRAM RESPONSE:", res.text)
+        print("📨 STATUS:", res.status_code)
+        print("📨 RESPONSE:", res.text)
 
     except Exception as e:
         print("❌ Telegram error:", e)
 
 # =========================
-# SAVE / LOAD
+# SAVE
 # =========================
 def load_trades():
     return pd.read_csv(TRADE_FILE)
@@ -97,7 +101,7 @@ def generate_signal(df):
     return "HOLD", score
 
 # =========================
-# LOT SIZE
+# LOT
 # =========================
 def calculate_position_size(equity, entry, sl):
     risk = equity * RISK_PER_TRADE
@@ -105,16 +109,16 @@ def calculate_position_size(equity, entry, sl):
     return int(risk / diff) if diff != 0 else 0
 
 # =========================
-# MAIN SCANNER
+# MAIN
 # =========================
 def run_scanner():
     print("🚀 SCANNER START")
 
-    # 🔥 TEST TELEGRAM (WAJIB UNTUK DEBUG)
-    send_telegram("TEST 🔥 Scanner aktif")
-
+    # 🔥 DEBUG TELEGRAM
     print("TOKEN:", TELEGRAM_TOKEN)
     print("CHAT_ID:", TELEGRAM_CHAT_ID)
+
+    send_telegram("TEST 🔥 Scanner aktif")
 
     trades_df = load_trades()
 
@@ -132,6 +136,7 @@ def run_scanner():
 
             df = yf.download(s, period="1mo", interval="1d", progress=False)
 
+            # ✅ FIX ERROR SERIES
             if df is None or df.empty:
                 print(f"⚠️ skip {s}")
                 continue
