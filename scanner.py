@@ -15,9 +15,9 @@ RISK_PER_TRADE = 0.02
 TRADE_FILE = "trades.csv"
 LOG_FILE = "scanner_log.csv"
 
-# 🔥 TELEGRAM
-TELEGRAM_TOKEN = "ISI_TOKEN_KAMU"
-TELEGRAM_CHAT_ID = "ISI_CHAT_ID_KAMU"
+# 🔥 TELEGRAM (pakai ENV biar aman di GitHub)
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # =========================
 # INIT FILE
@@ -29,20 +29,24 @@ if not os.path.exists(LOG_FILE):
     pd.DataFrame(columns=["Time","Stock","Price","Signal","Score"]).to_csv(LOG_FILE, index=False)
 
 # =========================
-# TELEGRAM
+# TELEGRAM FUNCTION (DEBUG)
 # =========================
 def send_telegram(msg):
     try:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": TELEGRAM_CHAT_ID, "text": msg},
-            timeout=5
-        )
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        res = requests.post(url, data={
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": msg
+        })
+
+        print("📨 TELEGRAM STATUS:", res.status_code)
+        print("📨 TELEGRAM RESPONSE:", res.text)
+
     except Exception as e:
         print("❌ Telegram error:", e)
 
 # =========================
-# SAVE
+# SAVE / LOAD
 # =========================
 def load_trades():
     return pd.read_csv(TRADE_FILE)
@@ -93,7 +97,7 @@ def generate_signal(df):
     return "HOLD", score
 
 # =========================
-# LOT
+# LOT SIZE
 # =========================
 def calculate_position_size(equity, entry, sl):
     risk = equity * RISK_PER_TRADE
@@ -101,10 +105,16 @@ def calculate_position_size(equity, entry, sl):
     return int(risk / diff) if diff != 0 else 0
 
 # =========================
-# MAIN
+# MAIN SCANNER
 # =========================
 def run_scanner():
     print("🚀 SCANNER START")
+
+    # 🔥 TEST TELEGRAM (WAJIB UNTUK DEBUG)
+    send_telegram("TEST 🔥 Scanner aktif")
+
+    print("TOKEN:", TELEGRAM_TOKEN)
+    print("CHAT_ID:", TELEGRAM_CHAT_ID)
 
     trades_df = load_trades()
 
@@ -131,7 +141,6 @@ def run_scanner():
             signal, score = generate_signal(df)
             price = df["Close"].iloc[-1]
 
-            # LOG
             save_log({
                 "Time": time.time(),
                 "Stock": s,
@@ -180,7 +189,7 @@ TP {best_trade['Exit']:.0f}
         print("⚠️ No signal")
 
 # =========================
-# RUN SEKALI (WAJIB)
+# RUN SEKALI (UNTUK GITHUB)
 # =========================
 if __name__ == "__main__":
     run_scanner()
