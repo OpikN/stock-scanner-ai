@@ -1,233 +1,173 @@
+import pandas as pd
+import numpy as np
+import yfinance as yf
+import time
 import os
-import requests
-import traceback
-
-from core import *
-from logger import save_log, get_stats
-from portfolio import (
-    save_trade,
-    calculate_pnl,
-    get_equity,
-    get_performance,
-    get_expectancy,
-    load_trades
-)
-
-
-def send(msg):
-    BOT_TOKEN = os.getenv("BOT_TOKEN")
-    CHAT_ID   = os.getenv("CHAT_ID")
-
-    if not BOT_TOKEN or not CHAT_ID:
-        print("❌ ENV NOT FOUND")
-        return
-
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-
-    try:
-        requests.post(url, data={
-            "chat_id": CHAT_ID,
-            "text": msg
-        })
-    except Exception as e:
-        print("ERROR TELEGRAM:", e)
-
 
 # =========================
-# 🔥 SMART RISK + COMPOUNDING
+# CONFIG
 # =========================
-def get_dynamic_risk(trades):
-    base = 0.02
+STOCKS = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
+INITIAL_CAPITAL = 10000000
+RISK_PER_TRADE = 0.02
 
-    if len(trades) < 5:
-        return base
+# =========================
+# AUTO CREATE FILE
+# =========================
+if not os.path.exists("trades.csv"):
+    df_init = pd.DataFrame(columns=["Time","Stock","Signal","Entry","Exit","PnL"])
+    df_init.to_csv("trades.csv", index=False)
 
-    last = trades[-5:]
-    wins = sum(1 for t in last if float(t["PnL"]) > 0)
-    losses = sum(1 for t in last if float(t["PnL"]) < 0)
+# =========================
+# LOAD TRADES
+# =========================
+def load_trades():
+    return pd.read_csv("trades.csv")
 
-    if wins >= 3:
-        return 0.03
-    if losses >= 3:
-        return 0.01
+# =========================
+# SAVE TRADE
+# =========================
+def save_trade(trade):
+    df = load_trades()
+    df = pd.concat([df, pd.DataFrame([trade])], ignore_index=True)
+    df.to_csv("trades.csv", index=False)
 
-    return base
+# =========================
+# INDICATOR
+# =========================
+def compute_indicators(df):
+    df["ema_fast"] = df["Close"].ewm(span=5).mean()
+    df["ema_slow"] = df["Close"].ewm(span=10).mean()
 
+    delta = df["Close"].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(7).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(7).mean()
+    rs = gain / (loss + 1e-9)
+    df["rsi"] = 100 - (100 / (1 + rs))
 
-def run():
-    equity = get_equity()
-    trades = load_trades()
+    return df
 
-    if equity <= 0:
-        send("❌ SYSTEM STOP - Equity habis")
-        return
+# =========================
+# SIGNAL LOGIC
+# =========================
+def generate_signal(df):
+    last = df.iloc[-1]
 
-    risk_pct = get_dynamic_risk(trades)
+    score = 0
 
-    ihsg = compute(get_data(IHSG))
-    market = get_market_regime(ihsg)
+    # TREND
+    if last["ema_fast"] > last["ema_slow"]:
+        score += 1
+    else:
+        score -= 1
 
-    candidates = []
+    # MOMENTUM
+    if last["rsi"] > 55:
+        score += 1
+    elif last["rsi"] < 45:
+        score -= 1
+
+    # FILTER SIDEWAYS
+    spread = abs(last["ema_fast"] - last["ema_slow"])
+    if spread < last["Close"] * 0.002:
+        return "HOLD", score
+
+    if score >= 2:
+        return "BUY", score
+    elif score <= -2:
+        return "SELL", score
+    else:
+        return "HOLD", score
+
+# =========================
+# POSITION SIZE
+# =========================
+def calculate_position_size(equity, entry, sl):
+    risk_amount = equity * RISK_PER_TRADE
+    risk_per_share = abs(entry - sl)
+
+    if risk_per_share == 0:
+        return 0
+
+    lot = risk_amount / risk_per_share
+    return int(lot)
+
+# =========================
+# MAIN LOOP
+# =========================
+def run_scanner():
+    trades_df = load_trades()
+
+    equity = INITIAL_CAPITAL
+    if not trades_df.empty:
+        trades_df["PnL"] = pd.to_numeric(trades_df["PnL"], errors="coerce")
+        equity = trades_df["PnL"].cumsum().iloc[-1] + INITIAL_CAPITAL
+
+    print(f"\n📊 MARKET SCAN | Equity: {equity}\n")
+
+    best_trade = None
+    best_score = 0
 
     for s in STOCKS:
-        df = compute(get_data(s))
-        if df is None:
-            continue
+        try:
+            df = yf.download(s, period="3mo", interval="1d")
 
-        sig, price = signal(df)
-        if sig == "HOLD":
-            continue
-
-        r = df.iloc[-1]
-        prev = df.iloc[-2]
-
-        # =========================
-        # 🔥 FILTER
-        # =========================
-        if r["adx"] < 15:
-            continue
-
-        if abs(r["ema20"] - r["ema50"]) / r["ema50"] < 0.001:
-            continue
-
-        # =========================
-        # 🔥 PULLBACK
-        # =========================
-        if sig == "SELL":
-            if price > r["ema20"]:
-                continue
-            if (r["ema20"] - price) / r["ema20"] > 0.03:
+            if df.empty or len(df) < 20:
                 continue
 
-        elif sig == "BUY":
-            if price < r["ema20"]:
-                continue
-            if (price - r["ema20"]) / r["ema20"] > 0.03:
-                continue
+            df = compute_indicators(df)
 
-        # =========================
-        # 🔥 RSI + CANDLE
-        # =========================
-        if sig == "SELL":
-            if not (prev["rsi"] > r["rsi"] and 40 < r["rsi"] < 60):
-                continue
-            if r["Close"] >= r["Open"]:
+            signal, score = generate_signal(df)
+
+            if signal == "HOLD":
                 continue
 
-        elif sig == "BUY":
-            if not (prev["rsi"] < r["rsi"] and 40 < r["rsi"] < 60):
-                continue
-            if r["Close"] <= r["Open"]:
-                continue
+            price = df["Close"].iloc[-1]
 
-        # =========================
-        # 🔥 RR 1:2
-        # =========================
-        if sig == "SELL":
-            sl = price * 1.02
-            tp = price * 0.96
-        else:
-            sl = price * 0.98
-            tp = price * 1.04
+            # SL & TP (RR 1:2)
+            if signal == "BUY":
+                sl = price * 0.98
+                tp = price * 1.04
+            else:
+                sl = price * 1.02
+                tp = price * 0.96
 
-        score = int(r["adx"] / 10)
+            lot = calculate_position_size(equity, price, sl)
 
-        if market == "BEAR" and sig == "SELL":
-            score += 3
-        elif market == "BULL" and sig == "BUY":
-            score += 3
+            pnl = (tp - price) * lot if signal == "BUY" else (price - tp) * lot
 
-        candidates.append({
-            "stock": s,
-            "signal": sig,
-            "price": price,
-            "sl": sl,
-            "tp": tp,
-            "score": score
-        })
+            print(f"[LOG] {s} | {signal} | Entry {price:.0f} | TP {tp:.0f} | SL {sl:.0f} | Lot {lot} | PnL {pnl:.0f}")
+
+            if score > best_score:
+                best_score = score
+                best_trade = {
+                    "Time": time.time(),
+                    "Stock": s,
+                    "Signal": signal,
+                    "Entry": price,
+                    "Exit": tp,
+                    "PnL": pnl
+                }
+
+        except Exception as e:
+            print(f"ERROR {s}: {e}")
 
     # =========================
-    # 🔥 ADAPTIVE FALLBACK
+    # SAVE BEST TRADE
     # =========================
-    if not candidates:
-        send(f"📊 MARKET: {market}\n\n⚠️ Tidak ada sinyal berkualitas hari ini\n\n💰 EQUITY: {int(equity)}")
-        return
+    if best_trade:
+        save_trade(best_trade)
 
-    candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:2]
+        print("\n🔥 BEST TRADE SAVED 🔥")
+        print(best_trade)
 
-    results = []
-    log_data = []
+    else:
+        print("⚠️ Tidak ada sinyal berkualitas hari ini")
 
-    for trade in candidates:
-        s = trade["stock"]
-        sig = trade["signal"]
-        price = trade["price"]
-        sl = trade["sl"]
-        tp = trade["tp"]
-
-        risk_amount = equity * risk_pct
-        lot = int(risk_amount / abs(price - sl))
-
-        if lot > 20:
-            lot = 20
-        if lot < 1:
-            lot = 1
-
-        exit_price = tp
-        pnl = calculate_pnl(price, exit_price, sig, lot)
-
-        trade_data = {
-            "Stock": s,
-            "Signal": sig,
-            "Entry": round(price, 2),
-            "Exit": round(exit_price, 2),
-            "Lot": lot,
-            "PnL": round(pnl, 2)
-        }
-
-        save_trade(trade_data)
-
-        # =========================
-        # 🔥 MONITORING LOG
-        # =========================
-        print(f"[LOG] {s} | {sig} | Entry {price} | TP {tp} | SL {sl} | Lot {lot} | PnL {pnl}")
-
-        results.append(
-            f"{s} → {sig} @ {round(price,2)} | TP {round(tp,2)} | SL {round(sl,2)} | Lot {lot} | PnL {round(pnl,2)}"
-        )
-
-        log_data.append({
-            "Stock": s,
-            "Signal": sig,
-            "Entry": round(price, 2)
-        })
-
-    save_log(log_data)
-
-    stats = get_stats()
-    equity = get_equity()
-    perf = get_performance()
-    exp = get_expectancy(load_trades(), last_n=20)
-
-    msg = f"📊 MARKET: {market}\n\n🔥 ADAPTIVE MULTI TRADE 🔥\n\n"
-    msg += "\n".join(results)
-    msg += f"\n\n📊 STATS:\n{stats}"
-    msg += f"\n\n💰 EQUITY: {int(equity)}"
-    msg += f"\n📈 PERFORMANCE:\n{perf}"
-    msg += f"\n📊 EXPECTANCY: {exp}"
-
-    # =========================
-    # 🔥 RISK MODE INFO
-    # =========================
-    msg += f"\n⚙️ RISK MODE: {risk_pct*100}%"
-
-    send(msg)
-
-
+# =========================
+# RUN 24/7
+# =========================
 if __name__ == "__main__":
-    try:
-        run()
-    except Exception as e:
-        print("ERROR:", e)
-        print(traceback.format_exc())
-        send(f"❌ ERROR:\n{e}")
+    while True:
+        run_scanner()
+        time.sleep(60)  # scan tiap 1 menit
