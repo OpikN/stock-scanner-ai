@@ -11,8 +11,24 @@ import numpy as np
 STOCKS = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
 
 INITIAL_CAPITAL = 10000000
-RISK_PER_TRADE = 0.02
 MAX_LOT = 100
+
+# 🔥 MODE SWITCH
+MODE = os.getenv("TRADING_MODE", "SAFE").upper()  # SAFE / AGGRESSIVE
+
+# Risk per mode
+if MODE == "AGGRESSIVE":
+    RISK_PER_TRADE = 0.03
+    MIN_SCORE = 1
+    TP_MULT = 1.2
+    USE_VOLUME_FILTER = False
+    USE_CANDLE_FILTER = False
+else:  # SAFE
+    RISK_PER_TRADE = 0.02
+    MIN_SCORE = 2
+    TP_MULT = 1.5
+    USE_VOLUME_FILTER = True
+    USE_CANDLE_FILTER = True
 
 MAX_LOSS_STREAK = 2
 MAX_DAILY_LOSS = -0.03
@@ -23,12 +39,15 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # =========================
-# SAFE FLOAT 🔥 (ANTI ERROR)
+# SAFE FLOAT
 # =========================
 def safe_float(x):
     try:
-        if hasattr(x, "iloc"):
-            return float(x.iloc[0])
+        import numpy as np
+        if hasattr(x, "values"):
+            x = x.values
+        if isinstance(x, (list, tuple, np.ndarray)):
+            return float(x[0])
         return float(x)
     except:
         return 0.0
@@ -96,7 +115,6 @@ def generate_signal(df):
     price = safe_float(last["Close"])
 
     score = 0
-
     trend = "BULL" if price > ema_trend else "BEAR"
 
     score += 1 if ema_fast > ema_slow else -1
@@ -106,29 +124,28 @@ def generate_signal(df):
     elif rsi < 45:
         score -= 1
 
-    # 🔥 TREND STRENGTH
+    # Trend strength (tetap dipakai dua mode)
     strength = abs(ema_fast - ema_slow) / price
-    if strength < 0.003:
+    if strength < (0.002 if MODE == "AGGRESSIVE" else 0.003):
         return "HOLD", score, trend
 
-    # 🔥 VOLUME FILTER (FIXED)
-    volume_now = safe_float(df["Volume"].iloc[-1:])
-    volume_avg = safe_float(df["Volume"].rolling(10).mean().iloc[-1:])
+    # 🔒 SAFE MODE FILTERS
+    if USE_VOLUME_FILTER:
+        volume_now = safe_float(df["Volume"].iloc[-1:])
+        volume_avg = safe_float(df["Volume"].rolling(10).mean().iloc[-1:])
+        if volume_now < volume_avg:
+            return "HOLD", score, trend
 
-    if volume_now < volume_avg:
-        return "HOLD", score, trend
+    if USE_CANDLE_FILTER:
+        candle = df.iloc[-1]
+        body = abs(candle["Close"] - candle["Open"])
+        range_candle = candle["High"] - candle["Low"]
+        if range_candle == 0 or (body / range_candle) < 0.5:
+            return "HOLD", score, trend
 
-    # 🔥 CANDLE FILTER
-    candle = df.iloc[-1]
-    body = abs(candle["Close"] - candle["Open"])
-    range_candle = candle["High"] - candle["Low"]
-
-    if range_candle == 0 or (body / range_candle) < 0.5:
-        return "HOLD", score, trend
-
-    if score >= 2 and trend == "BULL":
+    if score >= MIN_SCORE and trend == "BULL":
         return "BUY", score, trend
-    elif score <= -2 and trend == "BEAR":
+    elif score <= -MIN_SCORE and trend == "BEAR":
         return "SELL", score, trend
 
     return "HOLD", score, trend
@@ -143,7 +160,7 @@ def calculate_lot(equity, entry, sl):
     return min(lot, MAX_LOT)
 
 # =========================
-# ANTI LOSS
+# RISK CONTROL
 # =========================
 def check_risk(trades):
     if trades.empty:
@@ -162,7 +179,7 @@ def check_risk(trades):
 # MAIN
 # =========================
 def run():
-    print("🚀 SCANNER START")
+    print(f"🚀 SCANNER START | MODE: {MODE}")
 
     trades = load_trades()
 
@@ -190,15 +207,15 @@ def run():
             if signal == "HOLD":
                 continue
 
-            # 🔥 SMART ENTRY
+            # SMART ENTRY
             if signal == "BUY":
-                entry = price - (0.3 * atr)
+                entry = price - (0.2 * atr if MODE == "AGGRESSIVE" else 0.3 * atr)
                 sl = entry - (1 * atr)
-                tp = entry + (1.5 * atr)
+                tp = entry + (TP_MULT * atr)
             else:
-                entry = price + (0.3 * atr)
+                entry = price + (0.2 * atr if MODE == "AGGRESSIVE" else 0.3 * atr)
                 sl = entry + (1 * atr)
-                tp = entry - (1.5 * atr)
+                tp = entry - (TP_MULT * atr)
 
             lot = calculate_lot(equity, entry, sl)
 
@@ -226,7 +243,7 @@ def run():
         save_trade(best)
 
         msg = f"""
-📊 AI SNIPER SIGNAL
+📊 AI {MODE} SIGNAL
 
 📍 {best['Stock']} | {best['Signal']} | {best['Trend']}
 
@@ -234,7 +251,7 @@ def run():
 🎯 TP: {best['TP']:.0f}
 🛑 SL: {best['SL']:.0f}
 
-📊 Confidence: {abs(best['Score'])}/2
+📊 Confidence: {abs(best['Score'])}/{MIN_SCORE}
 📦 Lot: {best['Lot']}
 
 💵 Est.PnL: {best['PnL']:.0f}
