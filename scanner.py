@@ -15,12 +15,12 @@ RISK_PER_TRADE = 0.02
 TRADE_FILE = "trades.csv"
 LOG_FILE = "scanner_log.csv"
 
-# 🔥 TELEGRAM CONFIG
+# 🔥 TELEGRAM
 TELEGRAM_TOKEN = "ISI_TOKEN_KAMU"
 TELEGRAM_CHAT_ID = "ISI_CHAT_ID_KAMU"
 
 # =========================
-# INIT FILES
+# INIT FILE
 # =========================
 if not os.path.exists(TRADE_FILE):
     pd.DataFrame(columns=["Time","Stock","Signal","Entry","Exit","PnL"]).to_csv(TRADE_FILE, index=False)
@@ -29,21 +29,20 @@ if not os.path.exists(LOG_FILE):
     pd.DataFrame(columns=["Time","Stock","Price","Signal","Score"]).to_csv(LOG_FILE, index=False)
 
 # =========================
-# TELEGRAM FUNCTION
+# TELEGRAM
 # =========================
 def send_telegram(msg):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        data = {
+        requests.post(url, data={
             "chat_id": TELEGRAM_CHAT_ID,
             "text": msg
-        }
-        requests.post(url, data=data, timeout=5)
+        }, timeout=5)
     except Exception as e:
-        print("Telegram error:", e)
+        print("❌ Telegram error:", e)
 
 # =========================
-# LOAD / SAVE
+# SAVE / LOAD
 # =========================
 def load_trades():
     return pd.read_csv(TRADE_FILE)
@@ -59,7 +58,7 @@ def save_log(data):
     df.to_csv(LOG_FILE, index=False)
 
 # =========================
-# INDICATORS
+# INDICATOR
 # =========================
 def compute_indicators(df):
     df["ema_fast"] = df["Close"].ewm(span=5).mean()
@@ -78,7 +77,6 @@ def compute_indicators(df):
 # =========================
 def generate_signal(df):
     last = df.iloc[-1]
-
     score = 0
 
     if last["ema_fast"] > last["ema_slow"]:
@@ -103,7 +101,7 @@ def generate_signal(df):
         return "HOLD", score
 
 # =========================
-# POSITION SIZE
+# LOT SIZE
 # =========================
 def calculate_position_size(equity, entry, sl):
     risk_amount = equity * RISK_PER_TRADE
@@ -115,9 +113,11 @@ def calculate_position_size(equity, entry, sl):
     return int(risk_amount / risk_per_share)
 
 # =========================
-# MAIN SCANNER
+# SCANNER
 # =========================
 def run_scanner():
+    print("\n🚀 Scanner running...")
+
     trades_df = load_trades()
 
     equity = INITIAL_CAPITAL
@@ -125,24 +125,35 @@ def run_scanner():
         trades_df["PnL"] = pd.to_numeric(trades_df["PnL"], errors="coerce")
         equity = trades_df["PnL"].cumsum().iloc[-1] + INITIAL_CAPITAL
 
-    print(f"\n📊 SCAN | Equity: {equity}")
+    print(f"💰 Equity: {equity}")
 
     best_trade = None
     best_score = 0
 
     for s in STOCKS:
         try:
-            df = yf.download(s, period="3mo", interval="1d")
+            print(f"\n⏳ Downloading {s}...")
 
-            if df.empty or len(df) < 20:
+            df = yf.download(
+                s,
+                period="1mo",         # 🔥 lebih cepat
+                interval="1d",
+                progress=False,
+                threads=False
+            )
+
+            if df is None or df.empty:
+                print(f"⚠️ {s} gagal load")
                 continue
+
+            print(f"✅ {s} loaded ({len(df)} rows)")
 
             df = compute_indicators(df)
 
             signal, score = generate_signal(df)
             price = df["Close"].iloc[-1]
 
-            # 🔥 LOG AKTIVITAS (BIAR DASHBOARD HIDUP)
+            # 🔥 LOG ke dashboard
             save_log({
                 "Time": time.time(),
                 "Stock": s,
@@ -152,9 +163,10 @@ def run_scanner():
             })
 
             if signal == "HOLD":
+                print(f"➡️ {s} HOLD (score {score})")
                 continue
 
-            # SL / TP (RR 1:2)
+            # SL / TP
             if signal == "BUY":
                 sl = price * 0.98
                 tp = price * 1.04
@@ -163,10 +175,9 @@ def run_scanner():
                 tp = price * 0.96
 
             lot = calculate_position_size(equity, price, sl)
-
             pnl = (tp - price) * lot if signal == "BUY" else (price - tp) * lot
 
-            print(f"[LOG] {s} | {signal} | Entry {price:.0f} | TP {tp:.0f} | SL {sl:.0f} | Lot {lot} | PnL {pnl:.0f}")
+            print(f"🔥 {s} {signal} | Entry {price:.0f} | TP {tp:.0f} | SL {sl:.0f} | Lot {lot} | PnL {pnl:.0f}")
 
             if score > best_score:
                 best_score = score
@@ -180,7 +191,7 @@ def run_scanner():
                 }
 
         except Exception as e:
-            print(f"ERROR {s}: {e}")
+            print(f"❌ ERROR {s}: {e}")
 
     # =========================
     # SAVE + TELEGRAM
@@ -196,19 +207,17 @@ Signal: {best_trade['Signal']}
 Entry: {best_trade['Entry']:.0f}
 TP: {best_trade['Exit']:.0f}
 PnL Est: {best_trade['PnL']:.0f}
-
-⚙️ Mode: AUTO
 """
 
         send_telegram(msg)
 
-        print("🔥 BEST TRADE SAVED + TELEGRAM SENT")
+        print("📤 Signal dikirim ke Telegram")
 
     else:
-        print("⚠️ No strong signal")
+        print("⚠️ Tidak ada signal kuat")
 
 # =========================
-# LOOP 24/7
+# LOOP
 # =========================
 if __name__ == "__main__":
     while True:
