@@ -122,31 +122,30 @@ def run():
         r = df.iloc[-1]
 
         # =========================
-        # 🔥 FILTER KUALITAS
+        # 🔥 FILTER BALANCED
         # =========================
-        if r["adx"] < 20:
+
+        # trend cukup (lebih longgar)
+        if r["adx"] < 15:
             continue
 
-        if abs(r["ema20"] - r["ema50"]) / r["ema50"] < 0.003:
-            continue
-
-        distance = abs(price - r["ema20"]) / price
-        if distance < 0.01:
+        # EMA tidak terlalu rapat
+        if abs(r["ema20"] - r["ema50"]) / r["ema50"] < 0.001:
             continue
 
         # =========================
-        # 🔥 PULLBACK ENTRY (FIX LOSS)
+        # 🔥 PULLBACK ENTRY (VERSI LONGGAR)
         # =========================
         if sig == "SELL":
             if price > r["ema20"]:
                 continue
-            if (r["ema20"] - price) / r["ema20"] > 0.02:
+            if (r["ema20"] - price) / r["ema20"] > 0.03:
                 continue
 
         elif sig == "BUY":
             if price < r["ema20"]:
                 continue
-            if (price - r["ema20"]) / r["ema20"] > 0.02:
+            if (price - r["ema20"]) / r["ema20"] > 0.03:
                 continue
 
         # =========================
@@ -172,6 +171,7 @@ def run():
             "df": df
         })
 
+    # ambil max 2 terbaik
     candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:2]
 
     if not candidates:
