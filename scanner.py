@@ -14,13 +14,10 @@ INITIAL_CAPITAL = 10000000
 RISK_PER_TRADE = 0.02
 MAX_LOT = 100
 
-# 🔥 ANTI LOSS SYSTEM
 MAX_LOSS_STREAK = 2
-MAX_DAILY_LOSS = -0.03   # -3%
-COOLDOWN_TRADES = 2
+MAX_DAILY_LOSS = -0.03
 
 TRADE_FILE = "trades.csv"
-LOG_FILE = "scanner_log.csv"
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -32,7 +29,6 @@ def send_telegram(msg):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         print("❌ TELEGRAM ENV NOT SET")
         return
-
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
@@ -67,7 +63,7 @@ def compute_indicators(df):
     rs = gain / (loss + 1e-9)
     df["rsi"] = 100 - (100 / (1 + rs))
 
-    # 🔥 ATR (volatility)
+    # ATR
     df["tr"] = np.maximum.reduce([
         df["High"] - df["Low"],
         abs(df["High"] - df["Close"].shift()),
@@ -100,9 +96,28 @@ def generate_signal(df):
     elif rsi < 45:
         score -= 1
 
-    # 🔥 TREND STRENGTH FILTER
+    # =========================
+    # FILTER TAMBAHAN 🔥
+    # =========================
+
+    # 1. TREND STRENGTH
     strength = abs(ema_fast - ema_slow) / price
     if strength < 0.003:
+        return "HOLD", score, trend
+
+    # 2. VOLUME FILTER
+    volume_now = df["Volume"].iloc[-1]
+    volume_avg = df["Volume"].rolling(10).mean().iloc[-1]
+
+    if volume_now < volume_avg:
+        return "HOLD", score, trend
+
+    # 3. CANDLE STRENGTH
+    candle = df.iloc[-1]
+    body = abs(candle["Close"] - candle["Open"])
+    range_candle = candle["High"] - candle["Low"]
+
+    if range_candle == 0 or (body / range_candle) < 0.5:
         return "HOLD", score, trend
 
     if score >= 2 and trend == "BULL":
@@ -113,7 +128,7 @@ def generate_signal(df):
     return "HOLD", score, trend
 
 # =========================
-# POSITION SIZE
+# LOT SIZE
 # =========================
 def calculate_lot(equity, entry, sl):
     risk = equity * RISK_PER_TRADE
@@ -124,20 +139,17 @@ def calculate_lot(equity, entry, sl):
 # =========================
 # ANTI LOSS SYSTEM
 # =========================
-def check_risk_control(trades):
+def check_risk(trades):
     if trades.empty:
         return True
 
     # LOSS STREAK
-    last_trades = trades.tail(MAX_LOSS_STREAK)
-    if len(last_trades) == MAX_LOSS_STREAK and all(last_trades["PnL"] < 0):
-        print("⛔ STOP: Loss streak")
+    last = trades.tail(MAX_LOSS_STREAK)
+    if len(last) == MAX_LOSS_STREAK and all(last["PnL"] < 0):
         return False
 
     # DAILY LOSS
-    today = trades.tail(10)
-    if today["PnL"].sum() < INITIAL_CAPITAL * MAX_DAILY_LOSS:
-        print("⛔ STOP: Daily loss limit")
+    if trades.tail(10)["PnL"].sum() < INITIAL_CAPITAL * MAX_DAILY_LOSS:
         return False
 
     return True
@@ -150,13 +162,11 @@ def run():
 
     trades = load_trades()
 
-    if not check_risk_control(trades):
-        send_telegram("⛔ Trading dihentikan sementara (risk control aktif)")
+    if not check_risk(trades):
+        send_telegram("⛔ Trading dihentikan (risk control aktif)")
         return
 
-    equity = INITIAL_CAPITAL
-    if not trades.empty:
-        equity += trades["PnL"].sum()
+    equity = INITIAL_CAPITAL + trades["PnL"].sum() if not trades.empty else INITIAL_CAPITAL
 
     best = None
     best_score = 0
@@ -176,17 +186,20 @@ def run():
             if signal == "HOLD":
                 continue
 
-            # 🔥 SMART ENTRY (RETRACE)
+            # =========================
+            # SMART ENTRY 🔥
+            # =========================
             if signal == "BUY":
                 entry = price - (0.3 * atr)
                 sl = entry - (1 * atr)
-                tp = entry + (2 * atr)
+                tp = entry + (1.5 * atr if abs(score) == 2 else 2 * atr)
             else:
                 entry = price + (0.3 * atr)
                 sl = entry + (1 * atr)
-                tp = entry - (2 * atr)
+                tp = entry - (1.5 * atr if abs(score) == 2 else 2 * atr)
 
             lot = calculate_lot(equity, entry, sl)
+
             pnl = (tp - entry) * lot if signal == "BUY" else (entry - tp) * lot
 
             if best is None or abs(score) > abs(best_score):
@@ -211,7 +224,7 @@ def run():
         save_trade(best)
 
         msg = f"""
-📊 AI SMART SIGNAL
+📊 AI SNIPER SIGNAL
 
 📍 {best['Stock']} | {best['Signal']} | {best['Trend']}
 
