@@ -3,6 +3,7 @@ import numpy as np
 import yfinance as yf
 import time
 import os
+import requests
 
 # =========================
 # CONFIG
@@ -11,29 +12,54 @@ STOCKS = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
 INITIAL_CAPITAL = 10000000
 RISK_PER_TRADE = 0.02
 
-# =========================
-# AUTO CREATE FILE
-# =========================
-if not os.path.exists("trades.csv"):
-    df_init = pd.DataFrame(columns=["Time","Stock","Signal","Entry","Exit","PnL"])
-    df_init.to_csv("trades.csv", index=False)
+TRADE_FILE = "trades.csv"
+LOG_FILE = "scanner_log.csv"
+
+# 🔥 TELEGRAM CONFIG
+TELEGRAM_TOKEN = "ISI_TOKEN_KAMU"
+TELEGRAM_CHAT_ID = "ISI_CHAT_ID_KAMU"
 
 # =========================
-# LOAD TRADES
+# INIT FILES
+# =========================
+if not os.path.exists(TRADE_FILE):
+    pd.DataFrame(columns=["Time","Stock","Signal","Entry","Exit","PnL"]).to_csv(TRADE_FILE, index=False)
+
+if not os.path.exists(LOG_FILE):
+    pd.DataFrame(columns=["Time","Stock","Price","Signal","Score"]).to_csv(LOG_FILE, index=False)
+
+# =========================
+# TELEGRAM FUNCTION
+# =========================
+def send_telegram(msg):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        data = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": msg
+        }
+        requests.post(url, data=data, timeout=5)
+    except Exception as e:
+        print("Telegram error:", e)
+
+# =========================
+# LOAD / SAVE
 # =========================
 def load_trades():
-    return pd.read_csv("trades.csv")
+    return pd.read_csv(TRADE_FILE)
 
-# =========================
-# SAVE TRADE
-# =========================
 def save_trade(trade):
     df = load_trades()
     df = pd.concat([df, pd.DataFrame([trade])], ignore_index=True)
-    df.to_csv("trades.csv", index=False)
+    df.to_csv(TRADE_FILE, index=False)
+
+def save_log(data):
+    df = pd.read_csv(LOG_FILE)
+    df = pd.concat([df, pd.DataFrame([data])], ignore_index=True)
+    df.to_csv(LOG_FILE, index=False)
 
 # =========================
-# INDICATOR
+# INDICATORS
 # =========================
 def compute_indicators(df):
     df["ema_fast"] = df["Close"].ewm(span=5).mean()
@@ -48,33 +74,30 @@ def compute_indicators(df):
     return df
 
 # =========================
-# SIGNAL LOGIC
+# SIGNAL
 # =========================
 def generate_signal(df):
     last = df.iloc[-1]
 
     score = 0
 
-    # TREND
     if last["ema_fast"] > last["ema_slow"]:
         score += 1
     else:
         score -= 1
 
-    # MOMENTUM
     if last["rsi"] > 55:
         score += 1
     elif last["rsi"] < 45:
         score -= 1
 
-    # FILTER SIDEWAYS
     spread = abs(last["ema_fast"] - last["ema_slow"])
     if spread < last["Close"] * 0.002:
         return "HOLD", score
 
-    if score >= 2:
+    if score >= 1:
         return "BUY", score
-    elif score <= -2:
+    elif score <= -1:
         return "SELL", score
     else:
         return "HOLD", score
@@ -89,11 +112,10 @@ def calculate_position_size(equity, entry, sl):
     if risk_per_share == 0:
         return 0
 
-    lot = risk_amount / risk_per_share
-    return int(lot)
+    return int(risk_amount / risk_per_share)
 
 # =========================
-# MAIN LOOP
+# MAIN SCANNER
 # =========================
 def run_scanner():
     trades_df = load_trades()
@@ -103,7 +125,7 @@ def run_scanner():
         trades_df["PnL"] = pd.to_numeric(trades_df["PnL"], errors="coerce")
         equity = trades_df["PnL"].cumsum().iloc[-1] + INITIAL_CAPITAL
 
-    print(f"\n📊 MARKET SCAN | Equity: {equity}\n")
+    print(f"\n📊 SCAN | Equity: {equity}")
 
     best_trade = None
     best_score = 0
@@ -118,13 +140,21 @@ def run_scanner():
             df = compute_indicators(df)
 
             signal, score = generate_signal(df)
+            price = df["Close"].iloc[-1]
+
+            # 🔥 LOG AKTIVITAS (BIAR DASHBOARD HIDUP)
+            save_log({
+                "Time": time.time(),
+                "Stock": s,
+                "Price": price,
+                "Signal": signal,
+                "Score": score
+            })
 
             if signal == "HOLD":
                 continue
 
-            price = df["Close"].iloc[-1]
-
-            # SL & TP (RR 1:2)
+            # SL / TP (RR 1:2)
             if signal == "BUY":
                 sl = price * 0.98
                 tp = price * 1.04
@@ -153,21 +183,34 @@ def run_scanner():
             print(f"ERROR {s}: {e}")
 
     # =========================
-    # SAVE BEST TRADE
+    # SAVE + TELEGRAM
     # =========================
     if best_trade:
         save_trade(best_trade)
 
-        print("\n🔥 BEST TRADE SAVED 🔥")
-        print(best_trade)
+        msg = f"""
+📊 AI SIGNAL
+
+Stock: {best_trade['Stock']}
+Signal: {best_trade['Signal']}
+Entry: {best_trade['Entry']:.0f}
+TP: {best_trade['Exit']:.0f}
+PnL Est: {best_trade['PnL']:.0f}
+
+⚙️ Mode: AUTO
+"""
+
+        send_telegram(msg)
+
+        print("🔥 BEST TRADE SAVED + TELEGRAM SENT")
 
     else:
-        print("⚠️ Tidak ada sinyal berkualitas hari ini")
+        print("⚠️ No strong signal")
 
 # =========================
-# RUN 24/7
+# LOOP 24/7
 # =========================
 if __name__ == "__main__":
     while True:
         run_scanner()
-        time.sleep(60)  # scan tiap 1 menit
+        time.sleep(60)
