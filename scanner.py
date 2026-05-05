@@ -120,21 +120,19 @@ def run():
             continue
 
         r = df.iloc[-1]
+        prev = df.iloc[-2]
 
         # =========================
         # 🔥 FILTER BALANCED
         # =========================
-
-        # trend cukup (lebih longgar)
         if r["adx"] < 15:
             continue
 
-        # EMA tidak terlalu rapat
         if abs(r["ema20"] - r["ema50"]) / r["ema50"] < 0.001:
             continue
 
         # =========================
-        # 🔥 PULLBACK ENTRY (VERSI LONGGAR)
+        # 🔥 PULLBACK ENTRY
         # =========================
         if sig == "SELL":
             if price > r["ema20"]:
@@ -146,6 +144,21 @@ def run():
             if price < r["ema20"]:
                 continue
             if (price - r["ema20"]) / r["ema20"] > 0.03:
+                continue
+
+        # =========================
+        # 🔥 WINRATE BOOST (RSI + CANDLE)
+        # =========================
+        if sig == "SELL":
+            if not (prev["rsi"] > r["rsi"] and 40 < r["rsi"] < 60):
+                continue
+            if r["Close"] >= r["Open"]:
+                continue
+
+        elif sig == "BUY":
+            if not (prev["rsi"] < r["rsi"] and 40 < r["rsi"] < 60):
+                continue
+            if r["Close"] <= r["Open"]:
                 continue
 
         # =========================
@@ -171,12 +184,48 @@ def run():
             "df": df
         })
 
+    # =========================
+    # 🔥 FALLBACK MODE
+    # =========================
+    if not candidates:
+
+        fallback = []
+
+        for s in STOCKS:
+            df = compute(get_data(s))
+            if df is None:
+                continue
+
+            sig, price = signal(df)
+            if sig == "HOLD":
+                continue
+
+            r = df.iloc[-1]
+
+            if r["adx"] < 10:
+                continue
+
+            score = int(r["adx"] / 10)
+
+            fallback.append({
+                "stock": s,
+                "signal": sig,
+                "price": price,
+                "sl": price * (1.02 if sig == "SELL" else 0.98),
+                "score": score,
+                "df": df
+            })
+
+        fallback = sorted(fallback, key=lambda x: x["score"], reverse=True)[:1]
+
+        if not fallback:
+            send(f"📊 MARKET: {market}\n\n⚠️ Tidak ada sinyal sama sekali\n\n💰 EQUITY: {int(equity)}")
+            return
+
+        candidates = fallback
+
     # ambil max 2 terbaik
     candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:2]
-
-    if not candidates:
-        send(f"📊 MARKET: {market}\n\n⚠️ Tidak ada sinyal berkualitas hari ini\n\n💰 EQUITY: {int(equity)}")
-        return
 
     results = []
     log_data = []
