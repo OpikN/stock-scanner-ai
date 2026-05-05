@@ -4,7 +4,6 @@ import yfinance as yf
 import time
 import os
 import requests
-import threading
 
 # =========================
 # CONFIG
@@ -16,6 +15,7 @@ RISK_PER_TRADE = 0.02
 TRADE_FILE = "trades.csv"
 LOG_FILE = "scanner_log.csv"
 
+# 🔥 TELEGRAM
 TELEGRAM_TOKEN = "ISI_TOKEN_KAMU"
 TELEGRAM_CHAT_ID = "ISI_CHAT_ID_KAMU"
 
@@ -38,30 +38,24 @@ def send_telegram(msg):
             data={"chat_id": TELEGRAM_CHAT_ID, "text": msg},
             timeout=5
         )
-    except:
-        print("❌ Telegram error")
+    except Exception as e:
+        print("❌ Telegram error:", e)
 
 # =========================
-# SAFE DOWNLOAD (ANTI FREEZE)
+# SAVE
 # =========================
-def safe_download(symbol, result):
-    try:
-        df = yf.download(symbol, period="1mo", interval="1d", progress=False, threads=False)
-        result["data"] = df
-    except:
-        result["data"] = None
+def load_trades():
+    return pd.read_csv(TRADE_FILE)
 
-def download_with_timeout(symbol, timeout=10):
-    result = {"data": None}
-    thread = threading.Thread(target=safe_download, args=(symbol, result))
-    thread.start()
-    thread.join(timeout)
+def save_trade(trade):
+    df = load_trades()
+    df = pd.concat([df, pd.DataFrame([trade])], ignore_index=True)
+    df.to_csv(TRADE_FILE, index=False)
 
-    if thread.is_alive():
-        print(f"⛔ TIMEOUT {symbol}")
-        return None
-
-    return result["data"]
+def save_log(data):
+    df = pd.read_csv(LOG_FILE)
+    df = pd.concat([df, pd.DataFrame([data])], ignore_index=True)
+    df.to_csv(LOG_FILE, index=False)
 
 # =========================
 # INDICATOR
@@ -107,76 +101,75 @@ def calculate_position_size(equity, entry, sl):
     return int(risk / diff) if diff != 0 else 0
 
 # =========================
-# SAVE
-# =========================
-def save_trade(trade):
-    df = pd.read_csv(TRADE_FILE)
-    df = pd.concat([df, pd.DataFrame([trade])], ignore_index=True)
-    df.to_csv(TRADE_FILE, index=False)
-
-def save_log(log):
-    df = pd.read_csv(LOG_FILE)
-    df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
-    df.to_csv(LOG_FILE, index=False)
-
-# =========================
 # MAIN
 # =========================
 def run_scanner():
-    print("\n🚀 SCANNING...")
+    print("🚀 SCANNER START")
+
+    trades_df = load_trades()
+
+    equity = INITIAL_CAPITAL
+    if not trades_df.empty:
+        trades_df["PnL"] = pd.to_numeric(trades_df["PnL"], errors="coerce")
+        equity = trades_df["PnL"].cumsum().iloc[-1] + INITIAL_CAPITAL
 
     best_trade = None
     best_score = 0
 
     for s in STOCKS:
-        print(f"⏳ {s}...")
+        try:
+            print(f"⏳ {s}")
 
-        df = download_with_timeout(s)
+            df = yf.download(s, period="1mo", interval="1d", progress=False)
 
-        if df is None or df.empty:
-            print(f"⚠️ SKIP {s}")
-            continue
+            if df is None or df.empty:
+                print(f"⚠️ skip {s}")
+                continue
 
-        df = compute_indicators(df)
+            df = compute_indicators(df)
 
-        signal, score = generate_signal(df)
-        price = df["Close"].iloc[-1]
+            signal, score = generate_signal(df)
+            price = df["Close"].iloc[-1]
 
-        save_log({
-            "Time": time.time(),
-            "Stock": s,
-            "Price": price,
-            "Signal": signal,
-            "Score": score
-        })
-
-        print(f"➡️ {s} | {signal} | Score {score}")
-
-        if signal == "HOLD":
-            continue
-
-        sl = price * 0.98 if signal == "BUY" else price * 1.02
-        tp = price * 1.04 if signal == "BUY" else price * 0.96
-
-        lot = calculate_position_size(INITIAL_CAPITAL, price, sl)
-        pnl = (tp - price) * lot if signal == "BUY" else (price - tp) * lot
-
-        if score > best_score:
-            best_score = score
-            best_trade = {
+            # LOG
+            save_log({
                 "Time": time.time(),
                 "Stock": s,
+                "Price": price,
                 "Signal": signal,
-                "Entry": price,
-                "Exit": tp,
-                "PnL": pnl
-            }
+                "Score": score
+            })
+
+            print(f"{s} → {signal} ({score})")
+
+            if signal == "HOLD":
+                continue
+
+            sl = price * 0.98 if signal == "BUY" else price * 1.02
+            tp = price * 1.04 if signal == "BUY" else price * 0.96
+
+            lot = calculate_position_size(equity, price, sl)
+            pnl = (tp - price) * lot if signal == "BUY" else (price - tp) * lot
+
+            if score > best_score:
+                best_score = score
+                best_trade = {
+                    "Time": time.time(),
+                    "Stock": s,
+                    "Signal": signal,
+                    "Entry": price,
+                    "Exit": tp,
+                    "PnL": pnl
+                }
+
+        except Exception as e:
+            print(f"❌ ERROR {s}: {e}")
 
     if best_trade:
         save_trade(best_trade)
 
         send_telegram(f"""
-📊 SIGNAL
+📊 AI SIGNAL
 {best_trade['Stock']} {best_trade['Signal']}
 Entry {best_trade['Entry']:.0f}
 TP {best_trade['Exit']:.0f}
@@ -187,9 +180,7 @@ TP {best_trade['Exit']:.0f}
         print("⚠️ No signal")
 
 # =========================
-# LOOP
+# RUN SEKALI (WAJIB)
 # =========================
 if __name__ == "__main__":
-    while True:
-        run_scanner()
-        time.sleep(60)
+    run_scanner()
