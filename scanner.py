@@ -34,28 +34,24 @@ def send(msg):
 
 
 # =========================
-# 🔥 AUTO RISK SCALING + COMPOUNDING
+# 🔥 SMART RISK + COMPOUNDING
 # =========================
 def get_dynamic_risk(trades):
-    base_risk = 0.02
+    base = 0.02
 
     if len(trades) < 5:
-        return base_risk
+        return base
 
     last = trades[-5:]
-
     wins = sum(1 for t in last if float(t["PnL"]) > 0)
     losses = sum(1 for t in last if float(t["PnL"]) < 0)
 
-    # 🔥 kalau performa bagus → boost
     if wins >= 3:
         return 0.03
-
-    # 🔥 kalau jelek → turunkan risk
     if losses >= 3:
         return 0.01
 
-    return base_risk
+    return base
 
 
 def run():
@@ -86,7 +82,7 @@ def run():
         prev = df.iloc[-2]
 
         # =========================
-        # 🔥 FILTER
+        # 🔥 HIGH QUALITY FILTER
         # =========================
         if r["adx"] < 15:
             continue
@@ -95,7 +91,7 @@ def run():
             continue
 
         # =========================
-        # 🔥 PULLBACK
+        # 🔥 PULLBACK ENTRY
         # =========================
         if sig == "SELL":
             if price > r["ema20"]:
@@ -110,7 +106,7 @@ def run():
                 continue
 
         # =========================
-        # 🔥 RSI + CANDLE
+        # 🔥 RSI + CANDLE CONFIRM
         # =========================
         if sig == "SELL":
             if not (prev["rsi"] > r["rsi"] and 40 < r["rsi"] < 60):
@@ -151,12 +147,55 @@ def run():
         })
 
     # =========================
-    # 🔥 FALLBACK
+    # 🔥 ADAPTIVE FALLBACK MODE
     # =========================
     if not candidates:
-        send(f"📊 MARKET: {market}\n\n⚠️ Tidak ada sinyal berkualitas hari ini\n\n💰 EQUITY: {int(equity)}")
-        return
 
+        fallback = []
+
+        for s in STOCKS:
+            df = compute(get_data(s))
+            if df is None:
+                continue
+
+            sig, price = signal(df)
+            if sig == "HOLD":
+                continue
+
+            r = df.iloc[-1]
+
+            if r["adx"] < 10:
+                continue
+
+            if sig == "SELL":
+                sl = price * 1.02
+                tp = price * 0.96
+            else:
+                sl = price * 0.98
+                tp = price * 1.04
+
+            score = int(r["adx"] / 10)
+
+            fallback.append({
+                "stock": s,
+                "signal": sig,
+                "price": price,
+                "sl": sl,
+                "tp": tp,
+                "score": score
+            })
+
+        fallback = sorted(fallback, key=lambda x: x["score"], reverse=True)[:1]
+
+        if not fallback:
+            send(f"📊 MARKET: {market}\n\n⚠️ Tidak ada sinyal sama sekali\n\n💰 EQUITY: {int(equity)}")
+            return
+
+        candidates = fallback
+
+    # =========================
+    # 🔥 EXECUTION
+    # =========================
     candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:2]
 
     results = []
@@ -169,7 +208,6 @@ def run():
         sl = trade["sl"]
         tp = trade["tp"]
 
-        # 🔥 LOT (COMPOUNDING)
         risk_amount = equity * risk_pct
         lot = int(risk_amount / abs(price - sl))
 
@@ -178,9 +216,7 @@ def run():
         if lot < 1:
             lot = 1
 
-        # 🔥 EXIT = TP (backtest)
         exit_price = tp
-
         pnl = calculate_pnl(price, exit_price, sig, lot)
 
         trade_data = {
@@ -211,7 +247,7 @@ def run():
     perf = get_performance()
     exp = get_expectancy(load_trades(), last_n=20)
 
-    msg = f"📊 MARKET: {market}\n\n🔥 MULTI TRADE (COMPOUNDING) 🔥\n\n"
+    msg = f"📊 MARKET: {market}\n\n🔥 ADAPTIVE MULTI TRADE 🔥\n\n"
     msg += "\n".join(results)
     msg += f"\n\n📊 STATS:\n{stats}"
     msg += f"\n\n💰 EQUITY: {int(equity)}"
