@@ -3,30 +3,27 @@ import yfinance as yf
 import time
 import os
 import requests
+import numpy as np
 
 # =========================
 # CONFIG
 # =========================
 STOCKS = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
+
 INITIAL_CAPITAL = 10000000
 RISK_PER_TRADE = 0.02
+MAX_LOT = 100
 
-MAX_LOT = 100  # 🔥 BATAS MAKSIMAL LOT
+# 🔥 ANTI LOSS SYSTEM
+MAX_LOSS_STREAK = 2
+MAX_DAILY_LOSS = -0.03   # -3%
+COOLDOWN_TRADES = 2
 
 TRADE_FILE = "trades.csv"
 LOG_FILE = "scanner_log.csv"
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-# =========================
-# INIT FILE
-# =========================
-if not os.path.exists(TRADE_FILE):
-    pd.DataFrame(columns=["Time","Stock","Signal","Entry","TP","SL","Lot","PnL"]).to_csv(TRADE_FILE, index=False)
-
-if not os.path.exists(LOG_FILE):
-    pd.DataFrame(columns=["Time","Stock","Price","Signal","Score"]).to_csv(LOG_FILE, index=False)
 
 # =========================
 # TELEGRAM
@@ -38,20 +35,16 @@ def send_telegram(msg):
 
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        res = requests.post(url, data={
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": msg
-        })
-
-        print("📨 STATUS:", res.status_code)
-        print("📨 RESPONSE:", res.text)
-
-    except Exception as e:
-        print("❌ Telegram error:", e)
+        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
+    except:
+        pass
 
 # =========================
-# SAVE
+# FILE INIT
 # =========================
+if not os.path.exists(TRADE_FILE):
+    pd.DataFrame(columns=["Time","Stock","Signal","Entry","TP","SL","Lot","PnL"]).to_csv(TRADE_FILE, index=False)
+
 def load_trades():
     return pd.read_csv(TRADE_FILE)
 
@@ -59,11 +52,6 @@ def save_trade(trade):
     df = load_trades()
     df = pd.concat([df, pd.DataFrame([trade])], ignore_index=True)
     df.to_csv(TRADE_FILE, index=False)
-
-def save_log(data):
-    df = pd.read_csv(LOG_FILE)
-    df = pd.concat([df, pd.DataFrame([data])], ignore_index=True)
-    df.to_csv(LOG_FILE, index=False)
 
 # =========================
 # INDICATORS
@@ -78,6 +66,14 @@ def compute_indicators(df):
     loss = (-delta.where(delta < 0, 0)).rolling(7).mean()
     rs = gain / (loss + 1e-9)
     df["rsi"] = 100 - (100 / (1 + rs))
+
+    # 🔥 ATR (volatility)
+    df["tr"] = np.maximum.reduce([
+        df["High"] - df["Low"],
+        abs(df["High"] - df["Close"].shift()),
+        abs(df["Low"] - df["Close"].shift())
+    ])
+    df["atr"] = df["tr"].rolling(7).mean()
 
     return df
 
@@ -95,17 +91,19 @@ def generate_signal(df):
 
     score = 0
 
-    # Trend
     trend = "BULL" if price > ema_trend else "BEAR"
 
-    # EMA
     score += 1 if ema_fast > ema_slow else -1
 
-    # RSI
     if rsi > 55:
         score += 1
     elif rsi < 45:
         score -= 1
+
+    # 🔥 TREND STRENGTH FILTER
+    strength = abs(ema_fast - ema_slow) / price
+    if strength < 0.003:
+        return "HOLD", score, trend
 
     if score >= 2 and trend == "BULL":
         return "BUY", score, trend
@@ -115,40 +113,57 @@ def generate_signal(df):
     return "HOLD", score, trend
 
 # =========================
-# LOT SIZE (SAFE VERSION)
+# POSITION SIZE
 # =========================
-def calculate_position_size(equity, entry, sl):
+def calculate_lot(equity, entry, sl):
     risk = equity * RISK_PER_TRADE
     diff = abs(entry - sl)
-
     lot = int(risk / diff) if diff != 0 else 0
-
     return min(lot, MAX_LOT)
+
+# =========================
+# ANTI LOSS SYSTEM
+# =========================
+def check_risk_control(trades):
+    if trades.empty:
+        return True
+
+    # LOSS STREAK
+    last_trades = trades.tail(MAX_LOSS_STREAK)
+    if len(last_trades) == MAX_LOSS_STREAK and all(last_trades["PnL"] < 0):
+        print("⛔ STOP: Loss streak")
+        return False
+
+    # DAILY LOSS
+    today = trades.tail(10)
+    if today["PnL"].sum() < INITIAL_CAPITAL * MAX_DAILY_LOSS:
+        print("⛔ STOP: Daily loss limit")
+        return False
+
+    return True
 
 # =========================
 # MAIN
 # =========================
-def run_scanner():
+def run():
     print("🚀 SCANNER START")
 
-    send_telegram("TEST 🔥 Scanner aktif")
+    trades = load_trades()
 
-    trades_df = load_trades()
+    if not check_risk_control(trades):
+        send_telegram("⛔ Trading dihentikan sementara (risk control aktif)")
+        return
 
     equity = INITIAL_CAPITAL
-    if not trades_df.empty:
-        trades_df["PnL"] = pd.to_numeric(trades_df["PnL"], errors="coerce")
-        equity = trades_df["PnL"].cumsum().iloc[-1] + INITIAL_CAPITAL
+    if not trades.empty:
+        equity += trades["PnL"].sum()
 
-    best_trade = None
+    best = None
     best_score = 0
 
     for s in STOCKS:
         try:
-            print(f"⏳ {s}")
-
             df = yf.download(s, period="1mo", interval="1d", progress=False)
-
             if df is None or df.empty:
                 continue
 
@@ -156,35 +171,31 @@ def run_scanner():
 
             signal, score, trend = generate_signal(df)
             price = float(df["Close"].iloc[-1])
-
-            save_log({
-                "Time": time.time(),
-                "Stock": s,
-                "Price": price,
-                "Signal": signal,
-                "Score": score
-            })
-
-            print(f"{s} → {signal} ({score})")
+            atr = float(df["atr"].iloc[-1])
 
             if signal == "HOLD":
                 continue
 
-            # RR 1:2
-            sl = price * 0.98 if signal == "BUY" else price * 1.02
-            tp = price * 1.04 if signal == "BUY" else price * 0.96
+            # 🔥 SMART ENTRY (RETRACE)
+            if signal == "BUY":
+                entry = price - (0.3 * atr)
+                sl = entry - (1 * atr)
+                tp = entry + (2 * atr)
+            else:
+                entry = price + (0.3 * atr)
+                sl = entry + (1 * atr)
+                tp = entry - (2 * atr)
 
-            lot = calculate_position_size(equity, price, sl)
+            lot = calculate_lot(equity, entry, sl)
+            pnl = (tp - entry) * lot if signal == "BUY" else (entry - tp) * lot
 
-            pnl = (tp - price) * lot if signal == "BUY" else (price - tp) * lot
-
-            if best_trade is None or abs(score) > abs(best_score):
+            if best is None or abs(score) > abs(best_score):
                 best_score = score
-                best_trade = {
+                best = {
                     "Time": time.time(),
                     "Stock": s,
                     "Signal": signal,
-                    "Entry": price,
+                    "Entry": entry,
                     "TP": tp,
                     "SL": sl,
                     "Lot": lot,
@@ -194,37 +205,30 @@ def run_scanner():
                 }
 
         except Exception as e:
-            print(f"❌ ERROR {s}: {e}")
+            print("ERROR:", e)
 
-    if best_trade:
-        save_trade(best_trade)
+    if best:
+        save_trade(best)
 
         msg = f"""
-📊 AI TRADING SIGNAL
+📊 AI SMART SIGNAL
 
-📍 Stock: {best_trade['Stock']}
-📈 Signal: {best_trade['Signal']}
-📊 Trend: {best_trade['Trend']}
+📍 {best['Stock']} | {best['Signal']} | {best['Trend']}
 
-💰 Entry: {best_trade['Entry']:.0f}
-🎯 TP: {best_trade['TP']:.0f}
-🛑 SL: {best_trade['SL']:.0f}
+💰 Entry: {best['Entry']:.0f}
+🎯 TP: {best['TP']:.0f}
+🛑 SL: {best['SL']:.0f}
 
-⚖️ RR: 1:2
-📊 Confidence: {abs(best_trade['Score'])}/2
-📦 Lot: {best_trade['Lot']}
+📊 Confidence: {abs(best['Score'])}/2
+📦 Lot: {best['Lot']}
 
-💵 Est. PnL: {best_trade['PnL']:.0f}
+💵 Est.PnL: {best['PnL']:.0f}
 """
-
         send_telegram(msg)
 
-        print("🔥 SIGNAL SENT")
     else:
         print("⚠️ No signal")
 
 # =========================
-# RUN
-# =========================
 if __name__ == "__main__":
-    run_scanner()
+    run()
