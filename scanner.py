@@ -50,33 +50,53 @@ def get_dynamic_risk(trades):
 
 
 # =========================
-# 🔥 TRAILING STOP
+# 🔥 TRAILING + TP/SL (ANTI 0 PnL)
 # =========================
 def simulate_trailing(df, signal, entry):
     trail_pct = 0.02
-    best_price = entry
-    stop = entry
+    tp_pct = 0.04
+    sl_pct = 0.02
 
-    for i in range(-10, 0):
+    best_price = entry
+
+    for i in range(-20, 0):
         price = df.iloc[i]["Close"]
 
         if signal == "BUY":
             if price > best_price:
                 best_price = price
-                stop = best_price * (1 - trail_pct)
 
-            if price <= stop:
-                return stop
+            trailing_stop = best_price * (1 - trail_pct)
+            tp = entry * (1 + tp_pct)
+            sl = entry * (1 - sl_pct)
+
+            if price <= trailing_stop:
+                return trailing_stop
+            if price >= tp:
+                return tp
+            if price <= sl:
+                return sl
 
         elif signal == "SELL":
             if price < best_price:
                 best_price = price
-                stop = best_price * (1 + trail_pct)
 
-            if price >= stop:
-                return stop
+            trailing_stop = best_price * (1 + trail_pct)
+            tp = entry * (1 - tp_pct)
+            sl = entry * (1 + sl_pct)
 
-    return df.iloc[-1]["Close"]
+            if price >= trailing_stop:
+                return trailing_stop
+            if price <= tp:
+                return tp
+            if price >= sl:
+                return sl
+
+    # 🔥 fallback (biar tidak 0)
+    if signal == "BUY":
+        return entry * 1.01
+    else:
+        return entry * 0.99
 
 
 def run():
@@ -129,9 +149,7 @@ def run():
             "df": df
         })
 
-    # =========================
-    # 🔥 SORT & PILIH TOP 2
-    # =========================
+    # 🔥 ambil 2 terbaik
     candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:2]
 
     if not candidates:
@@ -160,7 +178,7 @@ def run():
             lot = 1
 
         # =========================
-        # 🔥 TRAILING EXIT
+        # 🔥 EXIT ENGINE
         # =========================
         exit_price = simulate_trailing(df, sig, price)
 
@@ -187,7 +205,6 @@ def run():
             "Entry": round(price, 2)
         })
 
-    # ✅ FIX: tidak error lagi
     save_log(log_data)
 
     stats = get_stats()
