@@ -15,7 +15,7 @@ placeholder = st.empty()
 while True:
     with placeholder.container():
 
-        st.markdown("## 🔥 AI Trading Dashboard PRO")
+        st.markdown("## 🔥 AI Opik Trading PRO")
 
         # =========================
         # LOAD DATA
