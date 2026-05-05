@@ -13,22 +13,8 @@ STOCKS = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
 INITIAL_CAPITAL = 10000000
 MAX_LOT = 100
 
-# 🔥 MODE SWITCH
-MODE = os.getenv("TRADING_MODE", "SAFE").upper()  # SAFE / AGGRESSIVE
-
-# Risk per mode
-if MODE == "AGGRESSIVE":
-    RISK_PER_TRADE = 0.03
-    MIN_SCORE = 1
-    TP_MULT = 1.2
-    USE_VOLUME_FILTER = False
-    USE_CANDLE_FILTER = False
-else:  # SAFE
-    RISK_PER_TRADE = 0.02
-    MIN_SCORE = 2
-    TP_MULT = 1.5
-    USE_VOLUME_FILTER = True
-    USE_CANDLE_FILTER = True
+# 🔥 AUTO MODE (override manual kalau ada)
+MANUAL_MODE = os.getenv("TRADING_MODE")  # optional: SAFE / AGGRESSIVE
 
 MAX_LOSS_STREAK = 2
 MAX_DAILY_LOSS = -0.03
@@ -43,7 +29,6 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 # =========================
 def safe_float(x):
     try:
-        import numpy as np
         if hasattr(x, "values"):
             x = x.values
         if isinstance(x, (list, tuple, np.ndarray)):
@@ -103,9 +88,39 @@ def compute_indicators(df):
     return df
 
 # =========================
+# 🔥 MARKET MODE DETECTOR
+# =========================
+def detect_mode(df):
+    last = df.iloc[-1:]
+
+    ema_fast = safe_float(last["ema_fast"])
+    ema_slow = safe_float(last["ema_slow"])
+    price = safe_float(last["Close"])
+    rsi = safe_float(last["rsi"])
+
+    volume_now = safe_float(df["Volume"].iloc[-1:])
+    volume_avg = safe_float(df["Volume"].rolling(10).mean().iloc[-1:])
+
+    strength = abs(ema_fast - ema_slow) / price
+
+    score = 0
+
+    if strength > 0.004:
+        score += 1
+    if rsi > 60 or rsi < 40:
+        score += 1
+    if volume_now > volume_avg:
+        score += 1
+
+    # 🔥 keputusan
+    if score >= 2:
+        return "AGGRESSIVE"
+    return "SAFE"
+
+# =========================
 # SIGNAL ENGINE
 # =========================
-def generate_signal(df):
+def generate_signal(df, MODE):
     last = df.iloc[-1:]
 
     ema_fast = safe_float(last["ema_fast"])
@@ -124,23 +139,21 @@ def generate_signal(df):
     elif rsi < 45:
         score -= 1
 
-    # Trend strength (tetap dipakai dua mode)
     strength = abs(ema_fast - ema_slow) / price
-    if strength < (0.002 if MODE == "AGGRESSIVE" else 0.003):
-        return "HOLD", score, trend
 
-    # 🔒 SAFE MODE FILTERS
-    if USE_VOLUME_FILTER:
+    if MODE == "AGGRESSIVE":
+        if strength < 0.002:
+            return "HOLD", score, trend
+        MIN_SCORE = 1
+    else:
+        if strength < 0.003:
+            return "HOLD", score, trend
+        MIN_SCORE = 2
+
+        # SAFE FILTER
         volume_now = safe_float(df["Volume"].iloc[-1:])
         volume_avg = safe_float(df["Volume"].rolling(10).mean().iloc[-1:])
         if volume_now < volume_avg:
-            return "HOLD", score, trend
-
-    if USE_CANDLE_FILTER:
-        candle = df.iloc[-1]
-        body = abs(candle["Close"] - candle["Open"])
-        range_candle = candle["High"] - candle["Low"]
-        if range_candle == 0 or (body / range_candle) < 0.5:
             return "HOLD", score, trend
 
     if score >= MIN_SCORE and trend == "BULL":
@@ -151,10 +164,11 @@ def generate_signal(df):
     return "HOLD", score, trend
 
 # =========================
-# LOT SIZE
+# LOT
 # =========================
-def calculate_lot(equity, entry, sl):
-    risk = equity * RISK_PER_TRADE
+def calculate_lot(equity, entry, sl, MODE):
+    risk_pct = 0.03 if MODE == "AGGRESSIVE" else 0.02
+    risk = equity * risk_pct
     diff = abs(entry - sl)
     lot = int(risk / diff) if diff != 0 else 0
     return min(lot, MAX_LOT)
@@ -179,7 +193,7 @@ def check_risk(trades):
 # MAIN
 # =========================
 def run():
-    print(f"🚀 SCANNER START | MODE: {MODE}")
+    print("🚀 SCANNER START (AUTO MODE)")
 
     trades = load_trades()
 
@@ -191,6 +205,7 @@ def run():
 
     best = None
     best_score = 0
+    final_mode = "SAFE"
 
     for s in STOCKS:
         try:
@@ -200,24 +215,29 @@ def run():
 
             df = compute_indicators(df)
 
-            signal, score, trend = generate_signal(df)
+            # 🔥 AUTO MODE DETECT
+            MODE = MANUAL_MODE if MANUAL_MODE else detect_mode(df)
+            final_mode = MODE
+
+            signal, score, trend = generate_signal(df, MODE)
+
             price = safe_float(df["Close"].iloc[-1:])
             atr = safe_float(df["atr"].iloc[-1:])
 
             if signal == "HOLD":
                 continue
 
-            # SMART ENTRY
+            # ENTRY
             if signal == "BUY":
                 entry = price - (0.2 * atr if MODE == "AGGRESSIVE" else 0.3 * atr)
                 sl = entry - (1 * atr)
-                tp = entry + (TP_MULT * atr)
+                tp = entry + ((1.2 if MODE == "AGGRESSIVE" else 1.5) * atr)
             else:
                 entry = price + (0.2 * atr if MODE == "AGGRESSIVE" else 0.3 * atr)
                 sl = entry + (1 * atr)
-                tp = entry - (TP_MULT * atr)
+                tp = entry - ((1.2 if MODE == "AGGRESSIVE" else 1.5) * atr)
 
-            lot = calculate_lot(equity, entry, sl)
+            lot = calculate_lot(equity, entry, sl, MODE)
 
             pnl = (tp - entry) * lot if signal == "BUY" else (entry - tp) * lot
 
@@ -232,8 +252,7 @@ def run():
                     "SL": sl,
                     "Lot": lot,
                     "PnL": pnl,
-                    "Score": score,
-                    "Trend": trend
+                    "Mode": MODE
                 }
 
         except Exception as e:
@@ -243,23 +262,23 @@ def run():
         save_trade(best)
 
         msg = f"""
-📊 AI {MODE} SIGNAL
+📊 AI AUTO MODE SIGNAL
 
-📍 {best['Stock']} | {best['Signal']} | {best['Trend']}
+⚙️ Mode: {best['Mode']}
+
+📍 {best['Stock']} | {best['Signal']}
 
 💰 Entry: {best['Entry']:.0f}
 🎯 TP: {best['TP']:.0f}
 🛑 SL: {best['SL']:.0f}
 
-📊 Confidence: {abs(best['Score'])}/{MIN_SCORE}
 📦 Lot: {best['Lot']}
-
 💵 Est.PnL: {best['PnL']:.0f}
 """
         send_telegram(msg)
 
     else:
-        print("⚠️ No signal")
+        print(f"⚠️ No signal | Mode: {final_mode}")
 
 # =========================
 if __name__ == "__main__":
