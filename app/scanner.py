@@ -19,7 +19,11 @@ def send_telegram(msg):
 
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg}, timeout=10)
+        requests.post(
+            url,
+            data={"chat_id": TELEGRAM_CHAT_ID, "text": msg},
+            timeout=10
+        )
     except:
         pass
 
@@ -34,8 +38,16 @@ def run():
 
     for stock in STOCKS:
         try:
-            df = yf.download(stock, period="5d", interval="1h", progress=False)
+            df = yf.download(
+                stock,
+                period="5d",
+                interval="1h",
+                progress=False
+            )
 
+            # =========================
+            # VALIDASI DATA
+            # =========================
             if df is None or df.empty or len(df) < 30:
                 log(f"SKIP {stock} (data kurang)")
                 continue
@@ -48,7 +60,7 @@ def run():
             latest_prices[stock] = price
 
             # =========================
-            # SKIP HOLD (PENTING 🔥)
+            # ❗ SKIP HOLD (KRUSIAL)
             # =========================
             if signal == "HOLD":
                 log(f"{stock} HOLD")
@@ -67,7 +79,7 @@ def run():
             save_trade(DATA_PATH, data)
 
             # =========================
-            # TP SL
+            # TP / SL
             # =========================
             if signal == "BUY":
                 tp = price * 1.03
@@ -77,7 +89,7 @@ def run():
                 sl = price * 1.02
 
             # =========================
-            # OPEN POSITION (NO DUPLICATE 🔥)
+            # OPEN POSITION (NO DUPLICATE)
             # =========================
             opened = open_position(stock, signal, price, tp, sl)
 
@@ -86,12 +98,12 @@ def run():
                 send_telegram(msg)
                 log(msg)
             else:
-                log(f"{stock} posisi sudah ada")
+                log(f"{stock} posisi sudah ada / limit tercapai")
 
         except Exception as e:
             log(f"ERROR {stock}: {e}")
 
     # =========================
-    # UPDATE TP/SL
+    # UPDATE POSITIONS (TP/SL/TRAILING)
     # =========================
     update_positions(latest_prices)
