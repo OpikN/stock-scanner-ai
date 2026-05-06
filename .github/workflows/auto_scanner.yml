@@ -2,32 +2,36 @@ name: Auto Scanner
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/30 * * * *"   # tiap 30 menit
   workflow_dispatch:
 
 jobs:
-  run:
+  run-scanner:
     runs-on: ubuntu-latest
 
-    env:
-      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Debug ENV
-        run: |
-          echo "TOKEN=$TELEGRAM_TOKEN"
-          echo "CHAT=$TELEGRAM_CHAT_ID"
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
-      - name: Install
+      - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run Scanner
-        run: python scanner.py
+      - name: Run scanner
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MODE: "SAFE"
+        run: python scripts/run_scanner.py
+
+      - name: Commit & push trades.csv
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add data/trades.csv
+          git commit -m "auto update trades" || echo "no changes"
+          git push
