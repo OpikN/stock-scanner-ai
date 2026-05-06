@@ -8,14 +8,15 @@ from app.portfolio import get_equity
 
 st.set_page_config(layout="wide")
 
-DATA_PATH = "data/positions.csv"
+POSITIONS_PATH = "data/positions.csv"
 STATE_PATH = "data/state.json"
+STRATEGY_PATH = "data/strategy.json"
 
 st.title("📊 AI TRADING TERMINAL")
 
 
 # =========================
-# LOAD DATA
+# LOAD CSV
 # =========================
 def load_csv(path):
     if os.path.exists(path):
@@ -26,7 +27,7 @@ def load_csv(path):
     return pd.DataFrame()
 
 
-positions = load_csv(DATA_PATH)
+positions = load_csv(POSITIONS_PATH)
 
 
 # =========================
@@ -57,6 +58,23 @@ else:
 
 
 # =========================
+# AI STRATEGY (SELF LEARNING)
+# =========================
+st.subheader("🧠 AI Strategy")
+
+if os.path.exists(STRATEGY_PATH):
+    try:
+        with open(STRATEGY_PATH) as f:
+            strat = json.load(f)
+
+        st.json(strat)
+    except:
+        st.warning("Strategy error")
+else:
+    st.warning("Strategy belum tersedia")
+
+
+# =========================
 # POSITIONS TABLE
 # =========================
 st.subheader("📂 All Positions")
@@ -64,14 +82,12 @@ st.subheader("📂 All Positions")
 if positions.empty:
     st.warning("Belum ada posisi")
 else:
-    positions = positions.copy()
+    df = positions.copy()
 
-    # unrealized risk (jarak ke SL)
-    positions["risk_left"] = (
-        abs(positions["entry"] - positions["sl"]) * positions["qty"]
-    )
+    # risk sisa ke SL
+    df["risk_left"] = abs(df["entry"] - df["sl"]) * df["qty"]
 
-    st.dataframe(positions.tail(50), use_container_width=True)
+    st.dataframe(df.tail(50), use_container_width=True)
 
 
 # =========================
