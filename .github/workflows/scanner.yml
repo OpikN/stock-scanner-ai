@@ -32,6 +32,6 @@ jobs:
         run: |
           git config --global user.name "bot"
           git config --global user.email "bot@users.noreply.github.com"
-          git add data/positions.csv data/state.json
+          git add data || true data/state.json
           git commit -m "update scanner" || echo "no changes"
           git push
