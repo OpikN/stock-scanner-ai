@@ -3,18 +3,19 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-import pandas as pd
 import yfinance as yf
 
 from app.strategy import generate_signal
 from app.adaptive import update_mode
-from app.storage import save_trade
+from app.portfolio import open_position, update_positions
 
 STOCKS = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
 
 
 def run():
-    print("🚀 SCANNER START (AI LIVE MODE)")
+    print("🚀 SCANNER START (AI RISK ENGINE)")
+
+    price_map = {}
 
     for symbol in STOCKS:
         try:
@@ -30,12 +31,12 @@ def run():
                 continue
 
             # =========================
-            # UPDATE AI MODE
+            # UPDATE MODE
             # =========================
             update_mode(df)
 
             # =========================
-            # ADD INDICATORS
+            # INDICATORS
             # =========================
             df["ema_5"] = df["Close"].ewm(span=5).mean()
             df["ema_10"] = df["Close"].ewm(span=10).mean()
@@ -48,24 +49,21 @@ def run():
             rs = gain / loss
             df["rsi"] = 100 - (100 / (1 + rs))
 
-            # =========================
-            # GENERATE SIGNAL
-            # =========================
             signal, price = generate_signal(df)
 
+            price_map[symbol] = price
+
             if signal != "HOLD":
-                trade = {
-                    "stock": symbol,
-                    "signal": signal,
-                    "price": round(price, 2)
-                }
-
-                print("📊 SIGNAL:", trade)
-
-                save_trade(trade)
+                print("📊 SIGNAL:", symbol, signal, price)
+                open_position(symbol, signal, price)
 
         except Exception as e:
             print("❌ ERROR:", symbol, e)
+
+    # =========================
+    # UPDATE TP/SL
+    # =========================
+    update_positions(price_map)
 
 
 if __name__ == "__main__":
