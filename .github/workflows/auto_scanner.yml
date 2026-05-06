@@ -2,8 +2,11 @@ name: Auto Scanner
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # tiap 30 menit
+    - cron: "*/30 * * * *"
   workflow_dispatch:
+
+permissions:
+  contents: write   # 🔥 WAJIB
 
 jobs:
   run-scanner:
@@ -25,7 +28,6 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          MODE: "SAFE"
         run: python scripts/run_scanner.py
 
       - name: Commit & push trades.csv
