@@ -11,6 +11,7 @@ st.set_page_config(layout="wide")
 POSITIONS_PATH = "data/positions.csv"
 STATE_PATH = "data/state.json"
 STRATEGY_PATH = "data/strategy.json"
+BRAIN_PATH = "data/last_opt.txt"
 
 st.title("📊 AI TRADING TERMINAL")
 
@@ -40,7 +41,7 @@ st.metric("Equity", f"{equity:,.0f}")
 
 
 # =========================
-# AI MODE
+# AI MODE (ADAPTIVE)
 # =========================
 st.subheader("🧠 AI Mode")
 
@@ -58,7 +59,7 @@ else:
 
 
 # =========================
-# AI STRATEGY (SELF LEARNING)
+# AI STRATEGY (LEARNING + OPTIMIZER)
 # =========================
 st.subheader("🧠 AI Strategy")
 
@@ -72,6 +73,24 @@ if os.path.exists(STRATEGY_PATH):
         st.warning("Strategy error")
 else:
     st.warning("Strategy belum tersedia")
+
+
+# =========================
+# AI BRAIN STATUS
+# =========================
+st.subheader("🧠 AI Brain Status")
+
+if os.path.exists(BRAIN_PATH):
+    try:
+        with open(BRAIN_PATH) as f:
+            last = float(f.read())
+
+        minutes = int((time.time() - last) / 60)
+        st.info(f"Last Optimizer Run: {minutes} menit lalu")
+    except:
+        st.warning("Brain status error")
+else:
+    st.warning("Optimizer belum pernah jalan")
 
 
 # =========================
