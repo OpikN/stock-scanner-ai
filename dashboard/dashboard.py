@@ -4,13 +4,10 @@ import os
 import time
 import json
 
-from app.portfolio import get_stats
-
 st.set_page_config(layout="wide")
 
 DATA_PATH = "data/trades.csv"
-POSITIONS_PATH = "data/positions.csv"
-STRATEGY_PATH = "data/strategy.json"
+STATE_PATH = "data/state.json"
 
 st.title("📊 AI TRADING TERMINAL")
 
@@ -28,40 +25,29 @@ def load_csv(path):
 
 
 trades = load_csv(DATA_PATH)
-positions = load_csv(POSITIONS_PATH)
 
 
 # =========================
-# STATS
+# AI MODE
 # =========================
-stats = get_stats()
+st.subheader("🧠 AI Live Mode")
 
-col1, col2, col3, col4 = st.columns(4)
-
-col1.metric("📊 Trades", stats["trades"])
-col2.metric("🎯 Winrate %", stats["winrate"])
-col3.metric("💰 Total PnL", stats["total_pnl"])
-col4.metric("🏦 Equity", stats["equity"])
-
-
-# =========================
-# AI STRATEGY 🔥
-# =========================
-st.subheader("🧠 AI Strategy")
-
-if os.path.exists(STRATEGY_PATH):
+if os.path.exists(STATE_PATH):
     try:
-        with open(STRATEGY_PATH) as f:
-            strategy = json.load(f)
-        st.json(strategy)
+        with open(STATE_PATH) as f:
+            state = json.load(f)
+
+        st.success(f"Mode: {state.get('mode', '-')}")
+        st.info(f"Market: {state.get('market', '-')}")
+
     except:
-        st.warning("Strategy error")
+        st.warning("State error")
 else:
-    st.info("Belum ada strategy AI")
+    st.warning("AI belum aktif")
 
 
 # =========================
-# LIVE SIGNAL
+# SIGNAL STREAM
 # =========================
 st.subheader("📡 Live Signal")
 
@@ -82,44 +68,12 @@ else:
 
 
 # =========================
-# POSITIONS
+# TABLE VIEW
 # =========================
-st.subheader("📂 Positions")
+st.subheader("📋 Signal Table")
 
-if positions.empty:
-    st.warning("Belum ada posisi")
-else:
-    st.dataframe(positions.tail(20), use_container_width=True)
-
-
-# =========================
-# ACTIVE RISK
-# =========================
-st.subheader("🛡️ Active Risk")
-
-if not positions.empty:
-    open_pos = positions[positions["status"] == "OPEN"]
-
-    if not open_pos.empty:
-        st.dataframe(open_pos[["stock", "entry", "sl", "tp", "qty"]])
-    else:
-        st.info("Tidak ada posisi aktif")
-
-
-# =========================
-# EQUITY CURVE
-# =========================
-st.subheader("📈 Equity Curve")
-
-if not positions.empty:
-    closed = positions[positions["status"] == "CLOSED"]
-
-    if not closed.empty:
-        closed = closed.copy()
-        closed["cum_pnl"] = closed["pnl"].cumsum()
-        st.line_chart(closed["cum_pnl"])
-    else:
-        st.info("Belum ada trade closed")
+if not trades.empty:
+    st.dataframe(trades.tail(50), use_container_width=True)
 
 
 # =========================
