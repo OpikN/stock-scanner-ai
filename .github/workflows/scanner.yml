@@ -2,6 +2,7 @@ name: AI Scanner
 
 on:
   workflow_dispatch:
+
   schedule:
     - cron: "*/10 * * * *"
 
@@ -16,31 +17,54 @@ jobs:
       PYTHONPATH: .
 
     steps:
-      - name: Checkout
+
+      # =========================
+      # CHECKOUT REPOSITORY
+      # =========================
+      - name: Checkout repository
         uses: actions/checkout@v3
 
+      # =========================
+      # SETUP PYTHON
+      # =========================
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
+      # =========================
+      # INSTALL DEPENDENCIES
+      # =========================
       - name: Install dependencies
         run: |
           pip install yfinance pandas streamlit requests
 
+      # =========================
+      # CREATE DATA FOLDER
+      # =========================
       - name: Create data folder
         run: |
           mkdir -p data
 
-      - name: Run Scanner
-        run: python scripts/run_scanner.py
+      # =========================
+      # RUN SCANNER
+      # =========================
+      - name: Run AI Scanner
+        run: |
+          python scripts/run_scanner.py
 
+      # =========================
+      # COMMIT POSITIONS
+      # =========================
       - name: Commit positions
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
 
           git add data/positions.csv || true
+
           git commit -m "update positions" || echo "no changes"
+
+          git pull --rebase origin main
 
           git push
