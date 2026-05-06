@@ -5,19 +5,19 @@ from app.adaptive import load_state
 # =========================
 # SAFE FLOAT
 # =========================
-def safe_float(x):
+def safe_float(x, default=0.0):
     try:
         if hasattr(x, "iloc"):
-            return float(x.iloc[0])
+            return float(x.iloc[-1])
         if hasattr(x, "item"):
             return float(x.item())
         return float(x)
     except:
-        return 0.0
+        return default
 
 
 # =========================
-# SIGNAL GENERATOR
+# SIGNAL GENERATOR (AI ADAPTIVE)
 # =========================
 def generate_signal(df):
     if df is None or df.empty:
@@ -26,40 +26,40 @@ def generate_signal(df):
     last = df.iloc[-1]
 
     # =========================
-    # LOAD AI STRATEGY
+    # LOAD STRATEGY (OPTIMIZER)
     # =========================
-    params = load_strategy()
+    params = load_strategy() or {}
 
-    ema_fast_period = params.get("ema_fast", 5)
-    ema_slow_period = params.get("ema_slow", 20)
+    ema_fast_n = params.get("ema_fast", 10)
+    ema_slow_n = params.get("ema_slow", 50)
+    rsi_buy = params.get("rsi_buy", 30)
+    rsi_sell = params.get("rsi_sell", 70)
 
-    ema_fast_key = f"ema_{ema_fast_period}"
-    ema_slow_key = f"ema_{ema_slow_period}"
+    ema_fast_key = f"ema_{ema_fast_n}"
+    ema_slow_key = f"ema_{ema_slow_n}"
 
     # =========================
-    # LOAD ADAPTIVE MODE
+    # LOAD MODE (AI BRAIN)
     # =========================
-    state = load_state()
+    state = load_state() or {}
     mode = state.get("mode", "SAFE")
 
-    # mode-based RSI
+    # adapt threshold berdasarkan mode
     if mode == "AGGRESSIVE":
-        rsi_buy = 45
-        rsi_sell = 55
+        rsi_buy += 10   # lebih gampang BUY
+        rsi_sell -= 10
     elif mode == "SCALP":
-        rsi_buy = 50
-        rsi_sell = 50
-    else:  # SAFE
-        rsi_buy = 40
-        rsi_sell = 60
+        rsi_buy += 5
+        rsi_sell -= 5
+    # SAFE → default
 
     # =========================
     # GET VALUE
     # =========================
-    ema_fast = safe_float(last.get(ema_fast_key, 0))
-    ema_slow = safe_float(last.get(ema_slow_key, 0))
-    rsi = safe_float(last.get("rsi", 50))
-    price = safe_float(last.get("Close", 0))
+    ema_fast = safe_float(last.get(ema_fast_key))
+    ema_slow = safe_float(last.get(ema_slow_key))
+    rsi = safe_float(last.get("rsi"), 50)
+    price = safe_float(last.get("Close"))
 
     # =========================
     # VALIDASI DATA
@@ -68,25 +68,25 @@ def generate_signal(df):
         return "HOLD", 0
 
     # =========================
-    # SIGNAL LOGIC (SMART TREND + RSI)
+    # TREND STRENGTH FILTER 🔥
     # =========================
+    trend_strength = abs(ema_fast - ema_slow) / price
 
-    # TREND UP
-    if ema_fast > ema_slow:
-        if rsi < rsi_buy:
-            return "BUY", price
-
-    # TREND DOWN
-    elif ema_fast < ema_slow:
-        if rsi > rsi_sell:
-            return "SELL", price
+    if trend_strength < 0.002:  # market sideways
+        return "HOLD", price
 
     # =========================
-    # FALLBACK (ANTI DIAM)
+    # SIGNAL LOGIC (REAL)
     # =========================
-    if ema_fast > ema_slow:
+    # BUY
+    if ema_fast > ema_slow and rsi < rsi_buy:
         return "BUY", price
-    elif ema_fast < ema_slow:
+
+    # SELL
+    if ema_fast < ema_slow and rsi > rsi_sell:
         return "SELL", price
 
+    # =========================
+    # NO SIGNAL
+    # =========================
     return "HOLD", price
