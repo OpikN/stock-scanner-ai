@@ -30,15 +30,16 @@ positions = load_csv(POSITIONS_PATH)
 
 
 # =========================
-# STATS
+# STATS (AUTO COMPOUNDING)
 # =========================
 stats = get_stats()
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("Total Trades", stats["trades"])
-col2.metric("Winrate %", stats["winrate"])
-col3.metric("Total PnL", stats["total_pnl"])
+col1.metric("📊 Trades", stats["trades"])
+col2.metric("🎯 Winrate %", stats["winrate"])
+col3.metric("💰 Total PnL", stats["total_pnl"])
+col4.metric("🏦 Equity", stats["equity"])
 
 
 # =========================
@@ -80,7 +81,9 @@ if not positions.empty:
     closed = positions[positions["status"] == "CLOSED"]
 
     if not closed.empty:
+        closed = closed.copy()
         closed["cum_pnl"] = closed["pnl"].cumsum()
+
         st.line_chart(closed["cum_pnl"])
     else:
         st.info("Belum ada trade closed")
