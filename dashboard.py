@@ -14,13 +14,25 @@ st.title("📊 AI TRADING TERMINAL")
 STOCKS = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
 
 # =========================
-# SAFE FLOAT 🔥
+# SAFE FLOAT (SUPER AMAN 🔥)
 # =========================
 def safe_float(x):
+    import numpy as np
+    import pandas as pd
+
     try:
-        return float(x.values[0])
-    except:
+        if isinstance(x, pd.DataFrame):
+            return float(x.values.flatten()[0])
+
+        if isinstance(x, pd.Series):
+            return float(x.iloc[0])
+
+        if isinstance(x, (list, tuple, np.ndarray)):
+            return float(np.array(x).flatten()[0])
+
         return float(x)
+    except:
+        return 0.0
 
 # =========================
 # LOAD DATA
@@ -46,29 +58,26 @@ def load_trades():
         return pd.DataFrame()
 
 # =========================
-# SCORE ENGINE (FIXED 🔥)
+# SCORE ENGINE (FIX TOTAL 🔥)
 # =========================
 def get_score(df):
     df["ema5"] = df["Close"].ewm(span=5).mean()
     df["ema10"] = df["Close"].ewm(span=10).mean()
     df["ema50"] = df["Close"].ewm(span=50).mean()
 
-    last = df.iloc[-1:]
-
-    ema5 = safe_float(last["ema5"])
-    ema10 = safe_float(last["ema10"])
-    ema50 = safe_float(last["ema50"])
-    price = safe_float(last["Close"])
+    ema5 = safe_float(df["ema5"].iloc[-1])
+    ema10 = safe_float(df["ema10"].iloc[-1])
+    ema50 = safe_float(df["ema50"].iloc[-1])
+    price = safe_float(df["Close"].iloc[-1])
 
     score = 0
-
     score += 1 if ema5 > ema10 else -1
     score += 1 if price > ema50 else -1
 
     return score
 
 # =========================
-# TELEGRAM 🔥
+# TELEGRAM
 # =========================
 def get_telegram_updates():
     try:
@@ -110,8 +119,8 @@ try:
 
         score = get_score(df)
 
-        price = df["Close"].iloc[-1]
-        prev = df["Close"].iloc[-2]
+        price = safe_float(df["Close"].iloc[-1])
+        prev = safe_float(df["Close"].iloc[-2])
         change = price - prev
 
         signal = "BUY" if score >= 1 else "SELL"
@@ -210,7 +219,7 @@ try:
                 st.write(m)
 
     # =========================
-    # REFRESH
+    # AUTO REFRESH
     # =========================
     st.markdown("---")
     st.caption("🔄 Auto refresh aktif")
