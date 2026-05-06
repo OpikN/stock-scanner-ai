@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import time
+
 from app.config import (
     INITIAL_BALANCE,
     RISK_SAFE,
@@ -19,6 +20,12 @@ DATA_PATH = "data/positions.csv"
 
 
 # =========================
+# ENSURE DATA FOLDER
+# =========================
+os.makedirs("data", exist_ok=True)
+
+
+# =========================
 # LOAD / SAVE
 # =========================
 def load_positions():
@@ -31,12 +38,11 @@ def load_positions():
 
 
 def save_positions(df):
-    os.makedirs("data", exist_ok=True)
     df.to_csv(DATA_PATH, index=False)
 
 
 # =========================
-# EQUITY (COMPOUNDING 🔥)
+# EQUITY (COMPOUNDING)
 # =========================
 def get_equity():
     df = load_positions()
@@ -44,27 +50,25 @@ def get_equity():
     if df.empty or "pnl" not in df.columns:
         return INITIAL_BALANCE
 
-    return INITIAL_BALANCE + df["pnl"].sum()
+    return float(INITIAL_BALANCE + df["pnl"].sum())
 
 
 # =========================
-# POSITION SIZING 🔥
+# POSITION SIZING
 # =========================
 def calculate_size(price, mode="SAFE"):
     equity = get_equity()
 
     risk_pct = RISK_SAFE if mode == "SAFE" else RISK_AGGRESSIVE
-
     risk_amount = equity * risk_pct
 
     size = risk_amount / (price * SL_PERCENT)
+    value = size * price
 
-    size_value = size * price
-
-    if size_value < MIN_TRADE_SIZE:
+    if value < MIN_TRADE_SIZE:
         size = MIN_TRADE_SIZE / price
 
-    return round(size, 4)
+    return float(round(size, 4))
 
 
 # =========================
@@ -87,26 +91,27 @@ def open_position(stock, side, price, tp, sl, mode="SAFE"):
 
     new = {
         "time": time.time(),
-        "stock": stock,
-        "side": side,
-        "entry": price,
-        "size": size,
-        "tp1": price * (1 + TP1_PERCENT) if side == "BUY" else price * (1 - TP1_PERCENT),
-        "tp2": price * (1 + TP2_PERCENT) if side == "BUY" else price * (1 - TP2_PERCENT),
-        "sl": price * (1 - SL_PERCENT) if side == "BUY" else price * (1 + SL_PERCENT),
+        "stock": str(stock),
+        "side": str(side),
+        "entry": float(price),
+        "size": float(size),
+        "tp1": float(price * (1 + TP1_PERCENT) if side == "BUY" else price * (1 - TP1_PERCENT)),
+        "tp2": float(price * (1 + TP2_PERCENT) if side == "BUY" else price * (1 - TP2_PERCENT)),
+        "sl": float(price * (1 - SL_PERCENT) if side == "BUY" else price * (1 + SL_PERCENT)),
         "status": "OPEN",
         "partial": False,
-        "pnl": 0
+        "pnl": 0.0
     }
 
     df = pd.concat([df, pd.DataFrame([new])], ignore_index=True)
     save_positions(df)
 
+    print("OPEN POSITION:", stock, side, price)
     return True
 
 
 # =========================
-# UPDATE POSITIONS 🔥
+# UPDATE POSITIONS
 # =========================
 def update_positions(latest_prices):
     df = load_positions()
@@ -117,56 +122,69 @@ def update_positions(latest_prices):
     for i in range(len(df)):
         row = df.iloc[i]
 
-        if row["status"] != "OPEN":
+        if str(row["status"]) != "OPEN":
             continue
 
-        stock = row["stock"]
+        stock = str(row["stock"])
         price = latest_prices.get(stock)
 
-        if not price:
+        # 🔥 FIX SERIES ERROR
+        if price is None:
             continue
 
-        entry = row["entry"]
-        size = row["size"]
-        side = row["side"]
+        try:
+            price = float(price)
+            entry = float(row["entry"])
+            size = float(row["size"])
+            side = str(row["side"])
+        except:
+            continue
 
+        # =========================
+        # PNL
+        # =========================
         pnl = (price - entry) * size if side == "BUY" else (entry - price) * size
-
-        df.at[i, "pnl"] = pnl
+        df.at[i, "pnl"] = float(pnl)
 
         # =========================
         # PARTIAL CLOSE (TP1)
         # =========================
-        if not row["partial"]:
-            if (side == "BUY" and price >= row["tp1"]) or (side == "SELL" and price <= row["tp1"]):
-                df.at[i, "size"] = size * (1 - PARTIAL_CLOSE_RATIO)
+        if not bool(row["partial"]):
+            if (side == "BUY" and price >= float(row["tp1"])) or \
+               (side == "SELL" and price <= float(row["tp1"])):
+
+                df.at[i, "size"] = float(size * (1 - PARTIAL_CLOSE_RATIO))
                 df.at[i, "partial"] = True
 
         # =========================
         # BREAK EVEN
         # =========================
-        if row["partial"]:
+        if bool(df.at[i, "partial"]):
             if (side == "BUY" and price > entry * (1 + BREAK_EVEN_TRIGGER)) or \
                (side == "SELL" and price < entry * (1 - BREAK_EVEN_TRIGGER)):
-                df.at[i, "sl"] = entry
+
+                df.at[i, "sl"] = float(entry)
 
         # =========================
         # TRAILING STOP
         # =========================
         if side == "BUY":
             new_sl = price * (1 - TRAILING_PERCENT)
-            if new_sl > row["sl"]:
-                df.at[i, "sl"] = new_sl
+            if new_sl > float(df.at[i, "sl"]):
+                df.at[i, "sl"] = float(new_sl)
         else:
             new_sl = price * (1 + TRAILING_PERCENT)
-            if new_sl < row["sl"]:
-                df.at[i, "sl"] = new_sl
+            if new_sl < float(df.at[i, "sl"]):
+                df.at[i, "sl"] = float(new_sl)
 
         # =========================
         # CLOSE POSITION
         # =========================
-        if (side == "BUY" and (price <= df.at[i, "sl"] or price >= row["tp2"])) or \
-           (side == "SELL" and (price >= df.at[i, "sl"] or price <= row["tp2"])):
+        sl = float(df.at[i, "sl"])
+        tp2 = float(row["tp2"])
+
+        if (side == "BUY" and (price <= sl or price >= tp2)) or \
+           (side == "SELL" and (price >= sl or price <= tp2)):
 
             df.at[i, "status"] = "CLOSED"
 
