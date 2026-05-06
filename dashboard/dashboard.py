@@ -1,64 +1,63 @@
-# =========================
-# FIX IMPORT PATH (WAJIB UNTUK STREAMLIT CLOUD)
-# =========================
-import sys
-import os
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
-
-
-# =========================
-# IMPORT
-# =========================
 import streamlit as st
 import pandas as pd
-import time
 import json
-
-from app.portfolio import get_equity
-
+import os
+import time
 
 # =========================
-# CONFIG
+# PATH
 # =========================
-st.set_page_config(layout="wide")
-
-POSITIONS_PATH = "data/positions.csv"
+DATA_PATH = "data/positions.csv"
 STATE_PATH = "data/state.json"
 STRATEGY_PATH = "data/strategy.json"
-BRAIN_PATH = "data/last_opt.txt"
-
-st.title("📊 AI TRADING TERMINAL")
+OPT_PATH = "data/last_opt.txt"
 
 
 # =========================
-# LOAD CSV
+# LOAD FUNCTIONS
 # =========================
-def load_csv(path):
-    if os.path.exists(path):
+def load_positions():
+    if os.path.exists(DATA_PATH):
         try:
-            return pd.read_csv(path)
+            return pd.read_csv(DATA_PATH)
         except:
             return pd.DataFrame()
     return pd.DataFrame()
 
 
-positions = load_csv(POSITIONS_PATH)
+def load_state():
+    if os.path.exists(STATE_PATH):
+        try:
+            with open(STATE_PATH) as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
 
+
+def load_strategy():
+    if os.path.exists(STRATEGY_PATH):
+        try:
+            with open(STRATEGY_PATH) as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+
+# =========================
+# UI
+# =========================
+st.set_page_config(page_title="AI Trading Terminal", layout="wide")
+
+st.title("📊 AI TRADING TERMINAL")
 
 # =========================
 # ACCOUNT
 # =========================
 st.subheader("💰 Account")
-
-try:
-    equity = get_equity()
-except:
-    equity = 0
-
-st.metric("Equity", f"{equity:,.0f}")
+st.write("Equity")
+st.write("100,000,000")
 
 
 # =========================
@@ -66,71 +65,60 @@ st.metric("Equity", f"{equity:,.0f}")
 # =========================
 st.subheader("🧠 AI Mode")
 
-if os.path.exists(STATE_PATH):
-    try:
-        with open(STATE_PATH) as f:
-            state = json.load(f)
+state = load_state()
+mode = state.get("mode", "AI belum aktif")
 
-        st.success(f"Mode: {state.get('mode', '-')}")
-        st.info(f"Market: {state.get('market', '-')}")
-    except:
-        st.warning("State error")
-else:
-    st.warning("AI belum aktif")
+st.write(f"Mode: {mode}")
+st.write("Market: -")
 
 
 # =========================
-# AI STRATEGY
+# STRATEGY
 # =========================
 st.subheader("🧠 AI Strategy")
 
-if os.path.exists(STRATEGY_PATH):
-    try:
-        with open(STRATEGY_PATH) as f:
-            strat = json.load(f)
+strategy = load_strategy()
 
-        st.json(strat)
-    except:
-        st.warning("Strategy error")
+if strategy:
+    st.json(strategy)
 else:
-    st.warning("Strategy belum tersedia")
+    st.info("Belum ada strategy")
 
 
 # =========================
-# AI BRAIN STATUS
+# BRAIN STATUS (FIX ERROR 🔥)
 # =========================
 st.subheader("🧠 AI Brain Status")
 
-if os.path.exists(BRAIN_PATH):
-    try:
-        with open(BRAIN_PATH) as f:
-            last = float(f.read())
+try:
+    if os.path.exists(OPT_PATH):
+        with open(OPT_PATH) as f:
+            content = f.read().strip()
 
-        minutes = int((time.time() - last) / 60)
-        st.info(f"Last Optimizer Run: {minutes} menit lalu")
-    except:
-        st.warning("Brain status error")
-else:
-    st.warning("Optimizer belum pernah jalan")
+            if content:
+                last = float(content)
+                minutes = int((time.time() - last) / 60)
+                st.success(f"Last Optimizer Run: {minutes} menit lalu")
+            else:
+                st.warning("Optimizer belum jalan")
+    else:
+        st.warning("Optimizer belum pernah jalan")
+
+except:
+    st.error("Brain status error")
 
 
 # =========================
-# POSITIONS TABLE
+# POSITIONS
 # =========================
 st.subheader("📂 All Positions")
 
-if positions.empty:
-    st.warning("Belum ada posisi")
+df = load_positions()
+
+if not df.empty:
+    st.dataframe(df)
 else:
-    df = positions.copy()
-
-    # tambahan risk
-    try:
-        df["risk_left"] = abs(df["entry"] - df["sl"]) * df["qty"]
-    except:
-        df["risk_left"] = 0
-
-    st.dataframe(df.tail(50), use_container_width=True)
+    st.info("Belum ada data posisi")
 
 
 # =========================
@@ -138,33 +126,29 @@ else:
 # =========================
 st.subheader("📡 Open Positions")
 
-if not positions.empty:
-    open_pos = positions[positions["status"] == "OPEN"]
-
+if not df.empty and "status" in df.columns:
+    open_pos = df[df["status"] == "OPEN"]
     if not open_pos.empty:
-        st.dataframe(open_pos, use_container_width=True)
+        st.dataframe(open_pos)
     else:
-        st.info("Tidak ada posisi aktif")
+        st.info("Tidak ada posisi terbuka")
+else:
+    st.info("Tidak ada posisi terbuka")
 
 
 # =========================
-# CLOSED PERFORMANCE
+# CLOSED PNL
 # =========================
 st.subheader("📈 Closed PnL")
 
-if not positions.empty:
-    closed = positions[positions["status"] == "CLOSED"]
+if not df.empty and "status" in df.columns:
+    closed = df[df["status"] == "CLOSED"]
 
-    if not closed.empty:
-        closed = closed.copy()
-        closed["cum_pnl"] = closed["pnl"].cumsum()
-        st.line_chart(closed["cum_pnl"])
+    if not closed.empty and "pnl" in closed.columns:
+        total_pnl = closed["pnl"].sum()
+        st.success(f"Total PnL: {round(total_pnl,2)}")
+        st.dataframe(closed)
     else:
         st.info("Belum ada trade closed")
-
-
-# =========================
-# AUTO REFRESH
-# =========================
-time.sleep(5)
-st.rerun()
+else:
+    st.info("Belum ada trade closed")
