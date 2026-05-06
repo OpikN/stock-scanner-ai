@@ -7,15 +7,14 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import yfinance as yf
 
 from app.strategy import generate_signal
-from app.adaptive import update_mode
 from app.portfolio import open_position, update_positions
-from app.learning import learn_from_trades
+from app.brain import run_brain
 
 STOCKS = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
 
 
 def run():
-    print("🚀 SCANNER START (FULL AI SYSTEM)")
+    print("🚀 SCANNER START (AI BRAIN ACTIVE)")
 
     price_map = {}
 
@@ -33,12 +32,12 @@ def run():
                 continue
 
             # =========================
-            # UPDATE AI MODE
+            # AI BRAIN (adaptive + learning + optimizer)
             # =========================
-            update_mode(df)
+            run_brain(df)
 
             # =========================
-            # ADD INDICATORS
+            # INDICATORS
             # =========================
             df["ema_5"] = df["Close"].ewm(span=5).mean()
             df["ema_10"] = df["Close"].ewm(span=10).mean()
@@ -69,11 +68,6 @@ def run():
     # UPDATE POSITIONS (TP/SL/TRAILING)
     # =========================
     update_positions(price_map)
-
-    # =========================
-    # AI SELF LEARNING 🔥
-    # =========================
-    learn_from_trades()
 
 
 if __name__ == "__main__":
