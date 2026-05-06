@@ -1,6 +1,19 @@
 import pandas as pd
 import os
-from app.config import INITIAL_BALANCE, RISK_SAFE, RISK_AGGRESSIVE, SL_PERCENT, TP_PERCENT
+
+from app.config import (
+    INITIAL_BALANCE,
+    RISK_SAFE,
+    RISK_AGGRESSIVE,
+    SL_PERCENT,
+    TP_PERCENT,
+    TP1_PERCENT,
+    TP2_PERCENT,
+    BREAK_EVEN_TRIGGER,
+    TRAILING_PERCENT,
+    PARTIAL_CLOSE_RATIO
+)
+
 from app.adaptive import load_state
 
 POSITIONS_PATH = "data/positions.csv"
@@ -41,7 +54,7 @@ def get_equity():
 
 
 # =========================
-# POSITION SIZE 🔥
+# POSITION SIZE
 # =========================
 def calculate_position(entry_price):
     state = load_state()
@@ -49,10 +62,7 @@ def calculate_position(entry_price):
 
     equity = get_equity()
 
-    if mode == "AGGRESSIVE":
-        risk_pct = RISK_AGGRESSIVE
-    else:
-        risk_pct = RISK_SAFE
+    risk_pct = RISK_AGGRESSIVE if mode == "AGGRESSIVE" else RISK_SAFE
 
     risk_amount = equity * risk_pct
 
@@ -89,7 +99,8 @@ def open_position(symbol, signal, price):
         "tp": tp,
         "qty": qty,
         "status": "OPEN",
-        "pnl": 0
+        "pnl": 0,
+        "partial_done": False
     }
 
     df = pd.concat([df, pd.DataFrame([trade])], ignore_index=True)
@@ -97,9 +108,9 @@ def open_position(symbol, signal, price):
 
 
 # =========================
-# UPDATE POSITIONS (TP/SL HIT)
+# UPDATE POSITIONS 🔥
 # =========================
-def update_positions(df_price):
+def update_positions(price_map):
     df = load_positions()
 
     if df.empty:
@@ -110,39 +121,91 @@ def update_positions(df_price):
             continue
 
         symbol = row["stock"]
-
-        if symbol not in df_price:
+        if symbol not in price_map:
             continue
 
-        price = df_price[symbol]
+        price = price_map[symbol]
 
         entry = row["entry"]
         sl = row["sl"]
-        tp = row["tp"]
         qty = row["qty"]
 
-        # BUY
+        # =========================
+        # BUY LOGIC
+        # =========================
         if row["signal"] == "BUY":
+
+            tp1 = entry * (1 + TP1_PERCENT)
+            tp2 = entry * (1 + TP2_PERCENT)
+
+            # STOP LOSS
             if price <= sl:
                 pnl = (sl - entry) * qty
                 df.at[i, "status"] = "CLOSED"
-                df.at[i, "pnl"] = pnl
+                df.at[i, "pnl"] += pnl
+                continue
 
-            elif price >= tp:
-                pnl = (tp - entry) * qty
+            # PARTIAL CLOSE
+            if price >= tp1 and not bool(row.get("partial_done", False)):
+                close_qty = int(qty * PARTIAL_CLOSE_RATIO)
+                pnl = (price - entry) * close_qty
+
+                df.at[i, "qty"] = qty - close_qty
+                df.at[i, "pnl"] += pnl
+                df.at[i, "partial_done"] = True
+
+            # BREAK EVEN
+            if price >= entry * (1 + BREAK_EVEN_TRIGGER):
+                df.at[i, "sl"] = entry
+
+            # TRAILING STOP
+            new_sl = price * (1 - TRAILING_PERCENT)
+            if new_sl > df.at[i, "sl"]:
+                df.at[i, "sl"] = new_sl
+
+            # FINAL TP
+            if price >= tp2:
+                pnl = (price - entry) * df.at[i, "qty"]
                 df.at[i, "status"] = "CLOSED"
-                df.at[i, "pnl"] = pnl
+                df.at[i, "pnl"] += pnl
 
-        # SELL
+        # =========================
+        # SELL LOGIC
+        # =========================
         elif row["signal"] == "SELL":
+
+            tp1 = entry * (1 - TP1_PERCENT)
+            tp2 = entry * (1 - TP2_PERCENT)
+
+            # STOP LOSS
             if price >= sl:
                 pnl = (entry - sl) * qty
                 df.at[i, "status"] = "CLOSED"
-                df.at[i, "pnl"] = pnl
+                df.at[i, "pnl"] += pnl
+                continue
 
-            elif price <= tp:
-                pnl = (entry - tp) * qty
+            # PARTIAL CLOSE
+            if price <= tp1 and not bool(row.get("partial_done", False)):
+                close_qty = int(qty * PARTIAL_CLOSE_RATIO)
+                pnl = (entry - price) * close_qty
+
+                df.at[i, "qty"] = qty - close_qty
+                df.at[i, "pnl"] += pnl
+                df.at[i, "partial_done"] = True
+
+            # BREAK EVEN
+            if price <= entry * (1 - BREAK_EVEN_TRIGGER):
+                df.at[i, "sl"] = entry
+
+            # TRAILING STOP
+            new_sl = price * (1 + TRAILING_PERCENT)
+            if new_sl < df.at[i, "sl"]:
+                df.at[i, "sl"] = new_sl
+
+            # FINAL TP
+            if price <= tp2:
+                pnl = (entry - price) * df.at[i, "qty"]
                 df.at[i, "status"] = "CLOSED"
-                df.at[i, "pnl"] = pnl
+                df.at[i, "pnl"] += pnl
 
     save_positions(df)
