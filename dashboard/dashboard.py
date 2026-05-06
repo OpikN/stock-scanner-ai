@@ -57,13 +57,20 @@ else:
 
 
 # =========================
-# POSITIONS
+# POSITIONS TABLE
 # =========================
-st.subheader("📂 Positions")
+st.subheader("📂 All Positions")
 
 if positions.empty:
     st.warning("Belum ada posisi")
 else:
+    positions = positions.copy()
+
+    # unrealized risk (jarak ke SL)
+    positions["risk_left"] = (
+        abs(positions["entry"] - positions["sl"]) * positions["qty"]
+    )
+
     st.dataframe(positions.tail(50), use_container_width=True)
 
 
@@ -82,7 +89,7 @@ if not positions.empty:
 
 
 # =========================
-# CLOSED PNL
+# CLOSED PERFORMANCE
 # =========================
 st.subheader("📈 Closed PnL")
 
