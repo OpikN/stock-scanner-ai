@@ -5,9 +5,11 @@ from itertools import product
 
 STRATEGY_PATH = "data/strategy.json"
 
+STOCKS = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
+
 
 # =========================
-# SAFE FLOAT (ANTI ERROR)
+# SAFE FLOAT
 # =========================
 def safe_float(x):
     try:
@@ -19,14 +21,11 @@ def safe_float(x):
 
 
 # =========================
-# LOAD / SAVE STRATEGY
+# SAVE / LOAD
 # =========================
 def save_strategy(params):
-    try:
-        with open(STRATEGY_PATH, "w") as f:
-            json.dump(params, f, indent=2)
-    except Exception as e:
-        print("❌ Save error:", e)
+    with open(STRATEGY_PATH, "w") as f:
+        json.dump(params, f, indent=2)
 
 
 def load_strategy():
@@ -38,16 +37,14 @@ def load_strategy():
 
 
 # =========================
-# BACKTEST ENGINE 🔥
+# BACKTEST
 # =========================
 def backtest(df, fast, slow, rsi_buy, rsi_sell):
     df = df.copy()
 
-    # EMA
     df["ema_fast"] = df["Close"].ewm(span=fast).mean()
     df["ema_slow"] = df["Close"].ewm(span=slow).mean()
 
-    # RSI
     delta = df["Close"].diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = -delta.clip(upper=0).rolling(14).mean()
@@ -55,8 +52,8 @@ def backtest(df, fast, slow, rsi_buy, rsi_sell):
     df["rsi"] = 100 - (100 / (1 + rs))
 
     pnl = 0
-    wins = 0
     trades = 0
+    wins = 0
 
     for i in range(20, len(df)):
         row = df.iloc[i]
@@ -66,34 +63,17 @@ def backtest(df, fast, slow, rsi_buy, rsi_sell):
         rsi = safe_float(row["rsi"])
         price = safe_float(row["Close"])
 
-        # skip data invalid
         if pd.isna(ema_fast) or pd.isna(ema_slow) or pd.isna(rsi):
             continue
 
-        # =========================
-        # BUY SIGNAL
-        # =========================
         if ema_fast > ema_slow and rsi < rsi_buy:
             entry = price
-
-            if i + 3 < len(df):
-                exit_price = safe_float(df.iloc[i + 3]["Close"])
-            else:
-                exit_price = entry
-
+            exit_price = safe_float(df.iloc[i + 3]["Close"]) if i + 3 < len(df) else entry
             result = exit_price - entry
 
-        # =========================
-        # SELL SIGNAL
-        # =========================
         elif ema_fast < ema_slow and rsi > rsi_sell:
             entry = price
-
-            if i + 3 < len(df):
-                exit_price = safe_float(df.iloc[i + 3]["Close"])
-            else:
-                exit_price = entry
-
+            exit_price = safe_float(df.iloc[i + 3]["Close"]) if i + 3 < len(df) else entry
             result = entry - exit_price
 
         else:
@@ -101,43 +81,61 @@ def backtest(df, fast, slow, rsi_buy, rsi_sell):
 
         pnl += result
         trades += 1
-
         if result > 0:
             wins += 1
 
     winrate = (wins / trades * 100) if trades > 0 else 0
-
     return pnl, winrate, trades
+
+
+# =========================
+# SPLIT TRAIN / VALID
+# =========================
+def split_data(df):
+    split = int(len(df) * 0.7)
+    return df.iloc[:split], df.iloc[split:]
+
+
+# =========================
+# DOWNLOAD MULTI STOCK
+# =========================
+def load_all_data():
+    data = {}
+
+    for s in STOCKS:
+        try:
+            df = yf.download(
+                s,
+                period="90d",
+                interval="1h",
+                auto_adjust=True,
+                progress=False
+            )
+
+            if df is not None and not df.empty:
+                data[s] = df
+
+        except:
+            continue
+
+    return data
 
 
 # =========================
 # OPTIMIZER CORE 🔥
 # =========================
 def optimize():
-    print("🚀 RUN AI OPTIMIZER")
+    print("🚀 AI OPTIMIZER MULTI STOCK")
 
-    try:
-        df = yf.download(
-            "BBCA.JK",
-            period="60d",
-            interval="1h",
-            auto_adjust=True,
-            progress=False
-        )
-    except Exception as e:
-        print("❌ Download error:", e)
-        return
+    data_map = load_all_data()
 
-    if df is None or df.empty:
+    if not data_map:
         print("❌ No data")
         return
 
     best_score = -999999
     best_params = None
 
-    # =========================
-    # PARAMETER GRID
-    # =========================
     fast_range = [5, 8, 10]
     slow_range = [20, 30, 50]
     rsi_buy_range = [25, 30, 35]
@@ -149,30 +147,51 @@ def optimize():
         if fast >= slow:
             continue
 
-        pnl, winrate, trades = backtest(df, fast, slow, rsi_b, rsi_s)
+        total_score = 0
+        valid_count = 0
 
-        # skip strategi lemah
-        if trades < 5:
+        for stock, df in data_map.items():
+            train, valid = split_data(df)
+
+            pnl_train, wr_train, tr_train = backtest(train, fast, slow, rsi_b, rsi_s)
+            pnl_val, wr_val, tr_val = backtest(valid, fast, slow, rsi_b, rsi_s)
+
+            if tr_train < 5 or tr_val < 3:
+                continue
+
+            # =========================
+            # ANTI OVERFIT SCORE
+            # =========================
+            stability = abs(wr_train - wr_val)
+
+            score = (
+                pnl_val * 1.5 +
+                wr_val * 10 -
+                stability * 5
+            )
+
+            total_score += score
+            valid_count += 1
+
+        if valid_count == 0:
             continue
 
-        # scoring formula
-        score = pnl + (winrate * 10)
+        avg_score = total_score / valid_count
 
-        if score > best_score:
-            best_score = score
+        if avg_score > best_score:
+            best_score = avg_score
             best_params = {
                 "ema_fast": fast,
                 "ema_slow": slow,
                 "rsi_buy": rsi_b,
                 "rsi_sell": rsi_s,
-                "score": round(score, 2),
-                "trades": trades,
-                "winrate": round(winrate, 2)
+                "score": round(avg_score, 2),
+                "stocks_used": valid_count
             }
 
     if best_params:
         save_strategy(best_params)
-        print("✅ BEST STRATEGY FOUND:")
+        print("✅ BEST GLOBAL STRATEGY:")
         print(best_params)
     else:
-        print("❌ No valid strategy found")
+        print("❌ No strategy found")
