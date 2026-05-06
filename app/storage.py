@@ -1,18 +1,19 @@
+import json
 import os
-import pandas as pd
 
-def save_trade(path, data):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+STRATEGY_PATH = "data/strategy.json"
 
-    new_df = pd.DataFrame([data])
 
-    if os.path.exists(path):
+def load_strategy():
+    if os.path.exists(STRATEGY_PATH):
         try:
-            old_df = pd.read_csv(path)
-            df = pd.concat([old_df, new_df], ignore_index=True)
+            with open(STRATEGY_PATH) as f:
+                return json.load(f)
         except:
-            df = new_df
-    else:
-        df = new_df
+            return {}
+    return {}
 
-    df.to_csv(path, index=False)
+
+def save_strategy(data):
+    with open(STRATEGY_PATH, "w") as f:
+        json.dump(data, f, indent=2)
