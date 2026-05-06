@@ -30,7 +30,7 @@ positions = load_csv(POSITIONS_PATH)
 
 
 # =========================
-# STATS (AUTO COMPOUNDING)
+# STATS
 # =========================
 stats = get_stats()
 
@@ -62,7 +62,7 @@ else:
 
 
 # =========================
-# POSITIONS TABLE
+# POSITIONS
 # =========================
 st.subheader("📂 Positions")
 
@@ -70,6 +70,20 @@ if positions.empty:
     st.warning("Belum ada posisi")
 else:
     st.dataframe(positions.tail(20), use_container_width=True)
+
+
+# =========================
+# ACTIVE RISK VIEW
+# =========================
+st.subheader("🛡️ Active Risk")
+
+if not positions.empty:
+    open_pos = positions[positions["status"] == "OPEN"]
+
+    if not open_pos.empty:
+        st.dataframe(open_pos[["stock","entry","sl","tp","qty"]])
+    else:
+        st.info("Tidak ada posisi aktif")
 
 
 # =========================
@@ -83,7 +97,6 @@ if not positions.empty:
     if not closed.empty:
         closed = closed.copy()
         closed["cum_pnl"] = closed["pnl"].cumsum()
-
         st.line_chart(closed["cum_pnl"])
     else:
         st.info("Belum ada trade closed")
