@@ -1,4 +1,4 @@
-from app.optimizer import load_strategy
+from app.storage import load_strategy
 from app.adaptive import load_state
 
 
