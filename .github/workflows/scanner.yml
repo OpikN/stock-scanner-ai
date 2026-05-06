@@ -1,61 +1,46 @@
 name: AI Scanner
 
 on:
+  workflow_dispatch:
   schedule:
-    - cron: "*/10 * * * *"   # jalan tiap 10 menit
-  workflow_dispatch:         # bisa run manual
+    - cron: "*/10 * * * *"
 
 permissions:
-  contents: write            # WAJIB untuk push ke repo
+  contents: write
 
 jobs:
   run-scanner:
     runs-on: ubuntu-latest
 
+    env:
+      PYTHONPATH: .
+
     steps:
-      # =========================
-      # CLONE REPO
-      # =========================
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v3
 
-      # =========================
-      # SETUP PYTHON
-      # =========================
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      # =========================
-      # INSTALL DEPENDENCIES
-      # =========================
       - name: Install dependencies
         run: |
-          pip install yfinance pandas
+          pip install yfinance pandas streamlit requests
 
-      # =========================
-      # RUN SCANNER
-      # =========================
-      - name: Run AI Scanner
+      - name: Create data folder
+        run: |
+          mkdir -p data
+
+      - name: Run Scanner
         run: python scripts/run_scanner.py
 
-      # =========================
-      # COMMIT DATA KE REPO 🔥
-      # =========================
       - name: Commit positions
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
 
-          # pastikan folder ada
-          mkdir -p data
-
-          # add file (tidak error kalau belum ada)
           git add data/positions.csv || true
-
-          # commit kalau ada perubahan
           git commit -m "update positions" || echo "no changes"
 
-          # push ke repo
           git push
