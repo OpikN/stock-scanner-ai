@@ -1,43 +1,35 @@
 # =========================
-# ACCOUNT CONFIG
+# STOCK LIST
 # =========================
-INITIAL_BALANCE = 100_000_000  # 100 juta
+STOCKS = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
 
 
 # =========================
-# RISK MANAGEMENT
+# ACCOUNT
 # =========================
-RISK_SAFE = 0.01        # 1% risk per trade
-RISK_AGGRESSIVE = 0.03  # 3% risk per trade
+INITIAL_BALANCE = 100_000_000
 
 
 # =========================
-# BASIC TRADE PARAMETER
+# RISK
 # =========================
-SL_PERCENT = 0.02   # 2% stop loss
-TP_PERCENT = 0.04   # fallback TP
+RISK_SAFE = 0.01
+RISK_AGGRESSIVE = 0.03
 
 
 # =========================
-# ADVANCED TRADE MANAGEMENT 🔥
-# =========================
-TP1_PERCENT = 0.02           # partial close (50%)
-TP2_PERCENT = 0.04           # final TP
-BREAK_EVEN_TRIGGER = 0.015   # pindah SL ke entry
-TRAILING_PERCENT = 0.01      # trailing stop 1%
-PARTIAL_CLOSE_RATIO = 0.5    # 50% close
-
-
-# =========================
-# POSITION SIZING 🔥
+# TRADE LIMIT
 # =========================
 MAX_OPEN_POSITIONS = 5
-MIN_TRADE_SIZE = 100_000     # minimal 100rb
+MIN_TRADE_SIZE = 100_000
 
 
 # =========================
-# AI MODE SWITCH
+# TP / SL
 # =========================
-MODE_SAFE = "SAFE"
-MODE_AGGRESSIVE = "AGGRESSIVE"
-MODE_SCALP = "SCALP"
+SL_PERCENT = 0.02
+TP1_PERCENT = 0.02
+TP2_PERCENT = 0.04
+BREAK_EVEN_TRIGGER = 0.015
+TRAILING_PERCENT = 0.01
+PARTIAL_CLOSE_RATIO = 0.5
