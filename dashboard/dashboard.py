@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import time
+import json
 
 from app.portfolio import get_stats
 
@@ -9,6 +10,7 @@ st.set_page_config(layout="wide")
 
 DATA_PATH = "data/trades.csv"
 POSITIONS_PATH = "data/positions.csv"
+STRATEGY_PATH = "data/strategy.json"
 
 st.title("📊 AI TRADING TERMINAL")
 
@@ -43,6 +45,22 @@ col4.metric("🏦 Equity", stats["equity"])
 
 
 # =========================
+# AI STRATEGY 🔥
+# =========================
+st.subheader("🧠 AI Strategy")
+
+if os.path.exists(STRATEGY_PATH):
+    try:
+        with open(STRATEGY_PATH) as f:
+            strategy = json.load(f)
+        st.json(strategy)
+    except:
+        st.warning("Strategy error")
+else:
+    st.info("Belum ada strategy AI")
+
+
+# =========================
 # LIVE SIGNAL
 # =========================
 st.subheader("📡 Live Signal")
@@ -57,8 +75,10 @@ else:
 
         if row["signal"] == "BUY":
             st.success(text)
-        else:
+        elif row["signal"] == "SELL":
             st.error(text)
+        else:
+            st.info(text)
 
 
 # =========================
@@ -73,7 +93,7 @@ else:
 
 
 # =========================
-# ACTIVE RISK VIEW
+# ACTIVE RISK
 # =========================
 st.subheader("🛡️ Active Risk")
 
@@ -81,7 +101,7 @@ if not positions.empty:
     open_pos = positions[positions["status"] == "OPEN"]
 
     if not open_pos.empty:
-        st.dataframe(open_pos[["stock","entry","sl","tp","qty"]])
+        st.dataframe(open_pos[["stock", "entry", "sl", "tp", "qty"]])
     else:
         st.info("Tidak ada posisi aktif")
 
