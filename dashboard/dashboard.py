@@ -1,11 +1,28 @@
+# =========================
+# FIX IMPORT PATH (WAJIB UNTUK STREAMLIT CLOUD)
+# =========================
+import sys
+import os
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.append(ROOT)
+
+
+# =========================
+# IMPORT
+# =========================
 import streamlit as st
 import pandas as pd
-import os
 import time
 import json
 
 from app.portfolio import get_equity
 
+
+# =========================
+# CONFIG
+# =========================
 st.set_page_config(layout="wide")
 
 POSITIONS_PATH = "data/positions.csv"
@@ -36,12 +53,16 @@ positions = load_csv(POSITIONS_PATH)
 # =========================
 st.subheader("💰 Account")
 
-equity = get_equity()
+try:
+    equity = get_equity()
+except:
+    equity = 0
+
 st.metric("Equity", f"{equity:,.0f}")
 
 
 # =========================
-# AI MODE (ADAPTIVE)
+# AI MODE
 # =========================
 st.subheader("🧠 AI Mode")
 
@@ -59,7 +80,7 @@ else:
 
 
 # =========================
-# AI STRATEGY (LEARNING + OPTIMIZER)
+# AI STRATEGY
 # =========================
 st.subheader("🧠 AI Strategy")
 
@@ -103,8 +124,11 @@ if positions.empty:
 else:
     df = positions.copy()
 
-    # risk sisa ke SL
-    df["risk_left"] = abs(df["entry"] - df["sl"]) * df["qty"]
+    # tambahan risk
+    try:
+        df["risk_left"] = abs(df["entry"] - df["sl"]) * df["qty"]
+    except:
+        df["risk_left"] = 0
 
     st.dataframe(df.tail(50), use_container_width=True)
 
