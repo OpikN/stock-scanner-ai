@@ -14,7 +14,7 @@ st.title("📊 AI TRADING TERMINAL")
 STOCKS = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
 
 # =========================
-# SAFE FLOAT (SUPER AMAN 🔥)
+# SAFE FLOAT 🔥
 # =========================
 def safe_float(x):
     import numpy as np
@@ -23,13 +23,10 @@ def safe_float(x):
     try:
         if isinstance(x, pd.DataFrame):
             return float(x.values.flatten()[0])
-
         if isinstance(x, pd.Series):
             return float(x.iloc[0])
-
         if isinstance(x, (list, tuple, np.ndarray)):
             return float(np.array(x).flatten()[0])
-
         return float(x)
     except:
         return 0.0
@@ -58,7 +55,7 @@ def load_trades():
         return pd.DataFrame()
 
 # =========================
-# SCORE ENGINE (FIX TOTAL 🔥)
+# SCORE ENGINE 🔥
 # =========================
 def get_score(df):
     df["ema5"] = df["Close"].ewm(span=5).mean()
@@ -135,14 +132,13 @@ try:
 
     monitor_df = pd.DataFrame(rows)
 
-    def color_signal(val):
-        return "color: green" if val == "BUY" else "color: red"
-
+    # 🔥 FIX STYLE TANPA ERROR
     if not monitor_df.empty:
-        st.dataframe(
-            monitor_df.style.applymap(color_signal, subset=["Signal"]),
-            use_container_width=True
+        monitor_df["Signal"] = monitor_df["Signal"].apply(
+            lambda x: "🟢 BUY" if x == "BUY" else "🔴 SELL"
         )
+
+        st.dataframe(monitor_df, use_container_width=True)
 
     # =========================
     # LEADERBOARD
