@@ -1,11 +1,4 @@
-yfinance
 pandas
+yfinance
 requests
-ta
 streamlit
-matplotlib
-fastapi
-uvicorn
-numpy
-requests
-plotly
