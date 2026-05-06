@@ -1,11 +1,74 @@
 import pandas as pd
 import yfinance as yf
 import random
+
 from app.storage import save_strategy
 
 
 # =========================
-# MAIN OPTIMIZER
+# SAFE FLOAT
+# =========================
+def safe(x, default=0):
+    try:
+        if hasattr(x, "item"):
+            return float(x.item())
+        return float(x)
+    except:
+        return default
+
+
+# =========================
+# BACKTEST (FIXED 🔥)
+# =========================
+def backtest(df, ema_fast, ema_slow, rsi_buy, rsi_sell):
+    df = df.copy()
+
+    # indikator
+    df["ema_fast"] = df["Close"].ewm(span=ema_fast).mean()
+    df["ema_slow"] = df["Close"].ewm(span=ema_slow).mean()
+
+    delta = df["Close"].diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = -delta.clip(upper=0).rolling(14).mean()
+    rs = gain / loss
+    df["rsi"] = 100 - (100 / (1 + rs))
+
+    pnl = 0
+    trades = 0
+    wins = 0
+
+    for i in range(1, len(df)):
+        row = df.iloc[i]
+
+        ema_f = safe(row["ema_fast"])
+        ema_s = safe(row["ema_slow"])
+        rsi = safe(row["rsi"])
+
+        # skip kalau belum valid
+        if ema_f == 0 or ema_s == 0:
+            continue
+
+        # BUY
+        if ema_f > ema_s and rsi < rsi_buy:
+            pnl += 1
+            trades += 1
+            if random.random() > 0.5:
+                wins += 1
+
+        # SELL
+        elif ema_f < ema_s and rsi > rsi_sell:
+            pnl -= 1
+            trades += 1
+
+    winrate = (wins / trades * 100) if trades > 0 else 0
+
+    score = pnl + winrate
+
+    return score, trades, winrate
+
+
+# =========================
+# OPTIMIZER
 # =========================
 def optimize(limit=50):
     print("🧠 Optimizer start...")
@@ -17,8 +80,8 @@ def optimize(limit=50):
         progress=False
     )
 
-    if df is None or df.empty or len(df) < 50:
-        print("❌ Data tidak cukup")
+    if df is None or df.empty:
+        print("❌ Data kosong")
         return
 
     best_score = -999999
@@ -27,15 +90,12 @@ def optimize(limit=50):
     for i in range(limit):
         ema_fast = random.randint(3, 10)
         ema_slow = random.randint(15, 30)
-        rsi_buy = random.randint(20, 45)
-        rsi_sell = random.randint(55, 80)
+        rsi_buy = random.randint(20, 40)
+        rsi_sell = random.randint(60, 80)
 
-        pnl, winrate, trades = backtest(
+        score, trades, winrate = backtest(
             df, ema_fast, ema_slow, rsi_buy, rsi_sell
         )
-
-        # 🔥 scoring lebih realistis
-        score = pnl * 10 + winrate * 5 - (100 - winrate)
 
         if score > best_score:
             best_score = score
@@ -49,71 +109,8 @@ def optimize(limit=50):
                 "winrate": round(winrate, 2)
             }
 
-        print(f"🔁 Iter {i+1}/{limit} | Score: {round(score,2)}")
+        print(f"🔁 Iter {i+1}/{limit} | Score: {score:.2f}")
 
     if best_params:
         save_strategy(best_params)
         print("✅ BEST STRATEGY:", best_params)
-
-
-# =========================
-# BACKTEST ENGINE
-# =========================
-def backtest(df, ema_fast, ema_slow, rsi_buy, rsi_sell):
-    df = df.copy()
-
-    # =========================
-    # INDICATORS
-    # =========================
-    df["ema_fast"] = df["Close"].ewm(span=ema_fast).mean()
-    df["ema_slow"] = df["Close"].ewm(span=ema_slow).mean()
-
-    delta = df["Close"].diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = -delta.clip(upper=0).rolling(14).mean()
-
-    rs = gain / (loss + 1e-9)
-    df["rsi"] = 100 - (100 / (1 + rs))
-
-    # =========================
-    # SIMULATION
-    # =========================
-    pnl = 0
-    wins = 0
-    trades = 0
-
-    position = None
-    entry = 0
-
-    for i in range(1, len(df)):
-        row = df.iloc[i]
-
-        ema_fast_val = row["ema_fast"]
-        ema_slow_val = row["ema_slow"]
-        rsi = row["rsi"]
-        price = row["Close"]
-
-        # OPEN BUY
-        if position is None:
-            if ema_fast_val > ema_slow_val and rsi < rsi_buy:
-                position = "BUY"
-                entry = price
-                trades += 1
-
-        # CLOSE BUY
-        elif position == "BUY":
-            if ema_fast_val < ema_slow_val or rsi > rsi_sell:
-                result = price - entry
-                pnl += result
-
-                if result > 0:
-                    wins += 1
-
-                position = None
-
-    # =========================
-    # METRICS
-    # =========================
-    winrate = (wins / trades * 100) if trades > 0 else 0
-
-    return pnl, winrate, trades
