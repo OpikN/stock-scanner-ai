@@ -1,73 +1,84 @@
-import sys
-import os
-
-# supaya bisa import app/*
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-
 import yfinance as yf
+from datetime import datetime
 
+from app.config import STOCKS
+from app.indicators import apply_indicators
 from app.strategy import generate_signal
 from app.portfolio import open_position, update_positions
-from app.brain import run_brain
-
-STOCKS = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
 
 
 def run():
-    print("🚀 SCANNER START (AI BRAIN ACTIVE)")
+    print("🚀 SCANNER START (CLEAN MODE)")
 
-    price_map = {}
+    latest_prices = {}
 
-    for symbol in STOCKS:
+    for stock in STOCKS:
         try:
             df = yf.download(
-                symbol,
+                stock,
                 period="5d",
-                interval="15m",
-                auto_adjust=True,
+                interval="1h",
                 progress=False
             )
 
-            if df is None or df.empty:
+            # =========================
+            # SAFE CHECK (ANTI SERIES BUG 🔥)
+            # =========================
+            if df is None:
+                print(f"SKIP {stock} (no data)")
                 continue
 
-            # =========================
-            # AI BRAIN (adaptive + learning + optimizer)
-            # =========================
-            run_brain(df)
+            if hasattr(df, "empty") and df.empty:
+                print(f"SKIP {stock} (empty)")
+                continue
+
+            if len(df) < 20:
+                print(f"SKIP {stock} (not enough data)")
+                continue
 
             # =========================
             # INDICATORS
             # =========================
-            df["ema_5"] = df["Close"].ewm(span=5).mean()
-            df["ema_10"] = df["Close"].ewm(span=10).mean()
-            df["ema_20"] = df["Close"].ewm(span=20).mean()
-            df["ema_50"] = df["Close"].ewm(span=50).mean()
-
-            delta = df["Close"].diff()
-            gain = delta.clip(lower=0).rolling(14).mean()
-            loss = -delta.clip(upper=0).rolling(14).mean()
-            rs = gain / loss
-            df["rsi"] = 100 - (100 / (1 + rs))
+            df = apply_indicators(df)
 
             # =========================
             # SIGNAL
             # =========================
             signal, price = generate_signal(df)
 
-            price_map[symbol] = price
+            try:
+                price = float(price)
+            except:
+                continue
 
-            if signal != "HOLD":
-                print(f"📊 SIGNAL: {symbol} {signal} @ {price}")
-                open_position(symbol, signal, price)
+            latest_prices[stock] = price
+
+            print(f"SIGNAL: {stock} {signal} @ {price}")
+
+            # =========================
+            # SKIP HOLD
+            # =========================
+            if signal == "HOLD":
+                continue
+
+            # =========================
+            # OPEN POSITION
+            # =========================
+            opened = open_position(stock, signal, price, price * 1.03, price * 0.98)
+
+            if opened:
+                print(f"OPENED: {stock} {signal}")
 
         except Exception as e:
-            print("❌ ERROR:", symbol, e)
+            print(f"❌ ERROR: {stock} {e}")
 
     # =========================
-    # UPDATE POSITIONS (TP/SL/TRAILING)
+    # UPDATE POSITIONS
     # =========================
-    update_positions(price_map)
+    try:
+        update_positions(latest_prices)
+    except Exception as e:
+        print("❌ UPDATE ERROR:", e)
 
 
 if __name__ == "__main__":
