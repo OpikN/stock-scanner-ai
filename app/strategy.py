@@ -1,15 +1,24 @@
 from app.optimizer import load_strategy
+from app.adaptive import load_state
 
 
+# =========================
+# SAFE FLOAT
+# =========================
 def safe_float(x):
     try:
         if hasattr(x, "iloc"):
             return float(x.iloc[0])
+        if hasattr(x, "item"):
+            return float(x.item())
         return float(x)
     except:
         return 0.0
 
 
+# =========================
+# SIGNAL GENERATOR
+# =========================
 def generate_signal(df):
     if df is None or df.empty:
         return "HOLD", 0
@@ -22,15 +31,27 @@ def generate_signal(df):
     params = load_strategy()
 
     if params:
-        ema_fast_key = f"ema_{params['ema_fast']}"
-        ema_slow_key = f"ema_{params['ema_slow']}"
-        rsi_buy = params["rsi_buy"]
-        rsi_sell = params["rsi_sell"]
+        ema_fast_key = f"ema_{params.get('ema_fast', 5)}"
+        ema_slow_key = f"ema_{params.get('ema_slow', 20)}"
     else:
         ema_fast_key = "ema_5"
         ema_slow_key = "ema_20"
-        rsi_buy = 30
-        rsi_sell = 70
+
+    # =========================
+    # LOAD ADAPTIVE MODE
+    # =========================
+    state = load_state()
+    mode = state.get("mode", "SAFE")
+
+    if mode == "AGGRESSIVE":
+        rsi_buy = 35
+        rsi_sell = 65
+    elif mode == "SCALP":
+        rsi_buy = 40
+        rsi_sell = 60
+    else:  # SAFE
+        rsi_buy = 25
+        rsi_sell = 75
 
     # =========================
     # GET VALUE
