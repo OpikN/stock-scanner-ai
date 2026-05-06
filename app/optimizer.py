@@ -4,7 +4,6 @@ import yfinance as yf
 from itertools import product
 
 STRATEGY_PATH = "data/strategy.json"
-
 STOCKS = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
 
 
@@ -28,20 +27,10 @@ def save_strategy(params):
         json.dump(params, f, indent=2)
 
 
-def load_strategy():
-    try:
-        with open(STRATEGY_PATH, "r") as f:
-            return json.load(f)
-    except:
-        return None
-
-
 # =========================
-# BACKTEST
+# INDICATORS
 # =========================
-def backtest(df, fast, slow, rsi_buy, rsi_sell):
-    df = df.copy()
-
+def add_indicators(df, fast, slow):
     df["ema_fast"] = df["Close"].ewm(span=fast).mean()
     df["ema_slow"] = df["Close"].ewm(span=slow).mean()
 
@@ -51,11 +40,20 @@ def backtest(df, fast, slow, rsi_buy, rsi_sell):
     rs = gain / loss
     df["rsi"] = 100 - (100 / (1 + rs))
 
+    return df
+
+
+# =========================
+# TP/SL BACKTEST 🔥
+# =========================
+def backtest_tp_sl(df, fast, slow, rsi_buy, rsi_sell, rr):
+    df = add_indicators(df.copy(), fast, slow)
+
     pnl = 0
     trades = 0
     wins = 0
 
-    for i in range(20, len(df)):
+    for i in range(30, len(df) - 5):
         row = df.iloc[i]
 
         ema_fast = safe_float(row["ema_fast"])
@@ -66,40 +64,90 @@ def backtest(df, fast, slow, rsi_buy, rsi_sell):
         if pd.isna(ema_fast) or pd.isna(ema_slow) or pd.isna(rsi):
             continue
 
+        # =========================
+        # BUY
+        # =========================
         if ema_fast > ema_slow and rsi < rsi_buy:
             entry = price
-            exit_price = safe_float(df.iloc[i + 3]["Close"]) if i + 3 < len(df) else entry
-            result = exit_price - entry
+            sl = entry * 0.98
+            tp = entry + (entry - sl) * rr
 
+            for j in range(i + 1, min(i + 10, len(df))):
+                high = safe_float(df.iloc[j]["High"])
+                low = safe_float(df.iloc[j]["Low"])
+
+                if low <= sl:
+                    pnl -= (entry - sl)
+                    trades += 1
+                    break
+
+                if high >= tp:
+                    pnl += (tp - entry)
+                    trades += 1
+                    wins += 1
+                    break
+
+        # =========================
+        # SELL
+        # =========================
         elif ema_fast < ema_slow and rsi > rsi_sell:
             entry = price
-            exit_price = safe_float(df.iloc[i + 3]["Close"]) if i + 3 < len(df) else entry
-            result = entry - exit_price
+            sl = entry * 1.02
+            tp = entry - (sl - entry) * rr
 
-        else:
-            continue
+            for j in range(i + 1, min(i + 10, len(df))):
+                high = safe_float(df.iloc[j]["High"])
+                low = safe_float(df.iloc[j]["Low"])
 
-        pnl += result
-        trades += 1
-        if result > 0:
-            wins += 1
+                if high >= sl:
+                    pnl -= (sl - entry)
+                    trades += 1
+                    break
+
+                if low <= tp:
+                    pnl += (entry - tp)
+                    trades += 1
+                    wins += 1
+                    break
 
     winrate = (wins / trades * 100) if trades > 0 else 0
     return pnl, winrate, trades
 
 
 # =========================
-# SPLIT TRAIN / VALID
+# WALK FORWARD 🔥
 # =========================
-def split_data(df):
-    split = int(len(df) * 0.7)
-    return df.iloc[:split], df.iloc[split:]
+def walk_forward(df, fast, slow, rsi_b, rsi_s, rr):
+    window = int(len(df) * 0.6)
+    step = int(len(df) * 0.2)
+
+    scores = []
+
+    for start in range(0, len(df) - window, step):
+        train = df.iloc[start:start + window]
+        test = df.iloc[start + window:start + window + step]
+
+        if len(test) < 20:
+            continue
+
+        pnl_train, wr_train, _ = backtest_tp_sl(train, fast, slow, rsi_b, rsi_s, rr)
+        pnl_test, wr_test, tr_test = backtest_tp_sl(test, fast, slow, rsi_b, rsi_s, rr)
+
+        if tr_test < 3:
+            continue
+
+        stability = abs(wr_train - wr_test)
+
+        score = pnl_test * 1.5 + wr_test * 10 - stability * 5
+        scores.append(score)
+
+    return sum(scores) / len(scores) if scores else -9999
 
 
 # =========================
-# DOWNLOAD MULTI STOCK
+# LOAD DATA
 # =========================
-def load_all_data():
+def load_data():
     data = {}
 
     for s in STOCKS:
@@ -125,9 +173,9 @@ def load_all_data():
 # OPTIMIZER CORE 🔥
 # =========================
 def optimize():
-    print("🚀 AI OPTIMIZER MULTI STOCK")
+    print("🚀 AI OPTIMIZER WALK-FORWARD")
 
-    data_map = load_all_data()
+    data_map = load_data()
 
     if not data_map:
         print("❌ No data")
@@ -140,43 +188,30 @@ def optimize():
     slow_range = [20, 30, 50]
     rsi_buy_range = [25, 30, 35]
     rsi_sell_range = [65, 70, 75]
+    rr_range = [1.5, 2.0, 2.5]
 
-    for fast, slow, rsi_b, rsi_s in product(
-        fast_range, slow_range, rsi_buy_range, rsi_sell_range
+    for fast, slow, rsi_b, rsi_s, rr in product(
+        fast_range, slow_range, rsi_buy_range, rsi_sell_range, rr_range
     ):
         if fast >= slow:
             continue
 
         total_score = 0
-        valid_count = 0
+        count = 0
 
         for stock, df in data_map.items():
-            train, valid = split_data(df)
+            score = walk_forward(df, fast, slow, rsi_b, rsi_s, rr)
 
-            pnl_train, wr_train, tr_train = backtest(train, fast, slow, rsi_b, rsi_s)
-            pnl_val, wr_val, tr_val = backtest(valid, fast, slow, rsi_b, rsi_s)
-
-            if tr_train < 5 or tr_val < 3:
+            if score == -9999:
                 continue
 
-            # =========================
-            # ANTI OVERFIT SCORE
-            # =========================
-            stability = abs(wr_train - wr_val)
-
-            score = (
-                pnl_val * 1.5 +
-                wr_val * 10 -
-                stability * 5
-            )
-
             total_score += score
-            valid_count += 1
+            count += 1
 
-        if valid_count == 0:
+        if count == 0:
             continue
 
-        avg_score = total_score / valid_count
+        avg_score = total_score / count
 
         if avg_score > best_score:
             best_score = avg_score
@@ -185,13 +220,14 @@ def optimize():
                 "ema_slow": slow,
                 "rsi_buy": rsi_b,
                 "rsi_sell": rsi_s,
+                "rr": rr,
                 "score": round(avg_score, 2),
-                "stocks_used": valid_count
+                "stocks_used": count
             }
 
     if best_params:
         save_strategy(best_params)
-        print("✅ BEST GLOBAL STRATEGY:")
+        print("✅ BEST STRATEGY:")
         print(best_params)
     else:
         print("❌ No strategy found")
