@@ -30,12 +30,11 @@ def generate_signal(df):
     # =========================
     params = load_strategy()
 
-    if params:
-        ema_fast_key = f"ema_{params.get('ema_fast', 5)}"
-        ema_slow_key = f"ema_{params.get('ema_slow', 20)}"
-    else:
-        ema_fast_key = "ema_5"
-        ema_slow_key = "ema_20"
+    ema_fast_period = params.get("ema_fast", 5)
+    ema_slow_period = params.get("ema_slow", 20)
+
+    ema_fast_key = f"ema_{ema_fast_period}"
+    ema_slow_key = f"ema_{ema_slow_period}"
 
     # =========================
     # LOAD ADAPTIVE MODE
@@ -43,15 +42,16 @@ def generate_signal(df):
     state = load_state()
     mode = state.get("mode", "SAFE")
 
+    # mode-based RSI
     if mode == "AGGRESSIVE":
-        rsi_buy = 35
-        rsi_sell = 65
+        rsi_buy = 45
+        rsi_sell = 55
     elif mode == "SCALP":
+        rsi_buy = 50
+        rsi_sell = 50
+    else:  # SAFE
         rsi_buy = 40
         rsi_sell = 60
-    else:  # SAFE
-        rsi_buy = 25
-        rsi_sell = 75
 
     # =========================
     # GET VALUE
@@ -62,12 +62,31 @@ def generate_signal(df):
     price = safe_float(last.get("Close", 0))
 
     # =========================
-    # SIGNAL LOGIC
+    # VALIDASI DATA
     # =========================
-    if ema_fast > ema_slow and rsi < rsi_buy:
-        return "BUY", price
+    if price == 0:
+        return "HOLD", 0
 
-    elif ema_fast < ema_slow and rsi > rsi_sell:
+    # =========================
+    # SIGNAL LOGIC (SMART TREND + RSI)
+    # =========================
+
+    # TREND UP
+    if ema_fast > ema_slow:
+        if rsi < rsi_buy:
+            return "BUY", price
+
+    # TREND DOWN
+    elif ema_fast < ema_slow:
+        if rsi > rsi_sell:
+            return "SELL", price
+
+    # =========================
+    # FALLBACK (ANTI DIAM)
+    # =========================
+    if ema_fast > ema_slow:
+        return "BUY", price
+    elif ema_fast < ema_slow:
         return "SELL", price
 
     return "HOLD", price
