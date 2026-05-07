@@ -1,19 +1,65 @@
-import json
+import pandas as pd
 import os
 
-STRATEGY_PATH = "data/strategy.json"
+# =========================
+# SAVE TRADE
+# =========================
+def save_trade(path, data):
 
+    try:
 
-def load_strategy():
-    if os.path.exists(STRATEGY_PATH):
-        try:
-            with open(STRATEGY_PATH) as f:
-                return json.load(f)
-        except:
-            return {}
-    return {}
+        # =========================
+        # CREATE DATAFRAME
+        # =========================
+        new_df = pd.DataFrame([data])
 
+        # =========================
+        # FILE EXISTS
+        # =========================
+        if os.path.exists(path):
 
-def save_strategy(data):
-    with open(STRATEGY_PATH, "w") as f:
-        json.dump(data, f, indent=2)
+            old_df = pd.read_csv(path)
+
+            df = pd.concat(
+
+                [old_df, new_df],
+
+                ignore_index=True
+            )
+
+        else:
+
+            df = new_df
+
+        # =========================
+        # SAVE CSV
+        # =========================
+        df.to_csv(
+
+            path,
+
+            index=False
+        )
+
+    except Exception as e:
+
+        print(
+            f"SAVE TRADE ERROR: {e}"
+        )
+
+# =========================
+# LOAD CSV
+# =========================
+def load_csv(path):
+
+    try:
+
+        if os.path.exists(path):
+
+            return pd.read_csv(path)
+
+        return pd.DataFrame()
+
+    except:
+
+        return pd.DataFrame()
