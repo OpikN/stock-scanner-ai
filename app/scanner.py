@@ -65,21 +65,20 @@ def run():
 
     log(
         "🚀 SCANNER START "
-        "(AI CONFIDENCE ENGINE)"
+        "(TRADE RANKING AI)"
     )
 
     latest_prices = {}
 
+    candidates = []
+
     # =========================
-    # LOOP STOCK
+    # SCAN ALL STOCKS
     # =========================
     for stock in STOCKS:
 
         try:
 
-            # =========================
-            # DOWNLOAD DATA
-            # =========================
             df = yf.download(
                 stock,
                 period="5d",
@@ -87,29 +86,20 @@ def run():
                 progress=False
             )
 
-            # =========================
-            # VALIDATION
-            # =========================
             if df is None:
-
-                log(f"SKIP {stock}")
 
                 continue
 
             if df.empty:
 
-                log(f"EMPTY {stock}")
-
                 continue
 
             if len(df) < 20:
 
-                log(f"DATA KURANG {stock}")
-
                 continue
 
             # =========================
-            # INDICATORS
+            # APPLY INDICATORS
             # =========================
             df = apply_indicators(df)
 
@@ -121,7 +111,7 @@ def run():
             )
 
             # =========================
-            # MARKET REGIME
+            # REGIME
             # =========================
             regime = detect_market_regime(df)
 
@@ -136,27 +126,18 @@ def run():
 
                 close = df["Close"]
 
-                if hasattr(close, "iloc"):
+                if len(close.shape) > 1:
 
-                    if len(close.shape) > 1:
-
-                        price = float(
-                            close.iloc[-1, 0]
-                        )
-
-                    else:
-
-                        price = float(
-                            close.iloc[-1]
-                        )
+                    price = float(
+                        close.iloc[-1, 0]
+                    )
 
                 else:
 
-                    price = 0
+                    price = float(
+                        close.iloc[-1]
+                    )
 
-            # =========================
-            # SAVE PRICE
-            # =========================
             latest_prices[stock] = price
 
             # =========================
@@ -187,41 +168,98 @@ def run():
             )
 
             # =========================
-            # OPEN POSITION
+            # STORE CANDIDATE
             # =========================
             if signal in ["BUY", "SELL"]:
 
-                open_position(
-                    stock=stock,
-                    side=signal,
-                    entry=price
-                )
+                candidates.append({
+
+                    "stock": stock,
+
+                    "signal": signal,
+
+                    "price": price,
+
+                    "confidence": confidence,
+
+                    "regime": regime
+                })
+
+        except Exception as e:
+
+            log(
+                f"❌ ERROR "
+                f"{stock}: {e}"
+            )
+
+    # =========================
+    # AI TRADE RANKING
+    # =========================
+    ranked = sorted(
+
+        candidates,
+
+        key=lambda x: x["confidence"],
+
+        reverse=True
+    )
+
+    # =========================
+    # TAKE TOP 2 ONLY
+    # =========================
+    top_trades = ranked[:2]
+
+    # =========================
+    # EXECUTE BEST TRADES
+    # =========================
+    for trade in top_trades:
+
+        try:
+
+            stock = trade["stock"]
+
+            signal = trade["signal"]
+
+            price = trade["price"]
+
+            confidence = trade["confidence"]
+
+            regime = trade["regime"]
 
             # =========================
-            # TELEGRAM MESSAGE
+            # OPEN POSITION
             # =========================
+            open_position(
+
+                stock=stock,
+
+                side=signal,
+
+                entry=price
+            )
+
             msg = (
-                f"{stock} "
-                f"{signal} "
-                f"@ {price:.0f}\n"
+                f"🔥 TOP AI TRADE\n\n"
+
+                f"{stock}\n"
+
+                f"{signal} @ {price:.0f}\n"
+
                 f"🧠 Confidence: "
                 f"{confidence}%\n"
+
                 f"📈 Regime: "
                 f"{regime}"
             )
 
             send_telegram(msg)
 
-            # =========================
-            # LOG
-            # =========================
             log(msg)
 
         except Exception as e:
 
             log(
-                f"❌ ERROR: "
-                f"{stock} {e}"
+                f"OPEN ERROR: {e}"
             )
 
     # =========================
@@ -236,8 +274,7 @@ def run():
     except Exception as e:
 
         log(
-            f"UPDATE POSITION ERROR: "
-            f"{e}"
+            f"UPDATE ERROR: {e}"
         )
 
 # =========================
