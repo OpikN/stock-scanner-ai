@@ -1,49 +1,47 @@
 import streamlit as st
 import pandas as pd
-import os
 import json
+import os
 import time
 
-# =========================
-# PAGE CONFIG
-# =========================
-st.set_page_config(
-    page_title="AI Trading Terminal",
-    layout="wide"
-)
+st.set_page_config(layout="wide")
 
-# =========================
-# FILE PATH
-# =========================
-POSITIONS_FILE = "./data/positions.csv"
-STRATEGY_FILE = "./data/strategy.json"
-OPT_FILE = "./data/last_opt.txt"
+POSITIONS_FILE = "data/positions.csv"
+STRATEGY_FILE = "data/strategy.json"
+OPT_FILE = "data/last_opt.txt"
+
 
 # =========================
 # LOAD POSITIONS
 # =========================
 def load_positions():
 
-    if not os.path.exists(POSITIONS_FILE):
-        st.error(f"File tidak ditemukan: {POSITIONS_FILE}")
-        return pd.DataFrame()
-
     try:
-        df = pd.read_csv(POSITIONS_FILE)
+
+        if not os.path.exists(POSITIONS_FILE):
+            st.error("positions.csv tidak ditemukan")
+            return pd.DataFrame()
+
+        # FORCE STRING SAFE
+        df = pd.read_csv(
+            POSITIONS_FILE,
+            engine="python"
+        )
+
+        # DEBUG
+        st.write("DEBUG ROWS:", len(df))
 
         return df
 
     except Exception as e:
-        st.error(f"Gagal baca CSV: {e}")
+        st.error(f"ERROR CSV: {e}")
         return pd.DataFrame()
+
 
 # =========================
 # LOAD STRATEGY
 # =========================
 def load_strategy():
-
-    if not os.path.exists(STRATEGY_FILE):
-        return {}
 
     try:
         with open(STRATEGY_FILE, "r") as f:
@@ -51,15 +49,17 @@ def load_strategy():
     except:
         return {}
 
-# =========================
-# LOAD OPTIMIZER STATUS
-# =========================
-def load_optimizer():
 
-    if not os.path.exists(OPT_FILE):
-        return "Optimizer belum jalan"
+# =========================
+# OPT STATUS
+# =========================
+def optimizer_status():
 
     try:
+
+        if not os.path.exists(OPT_FILE):
+            return "Belum pernah jalan"
+
         diff = int(time.time() - os.path.getmtime(OPT_FILE))
 
         if diff < 60:
@@ -71,57 +71,53 @@ def load_optimizer():
         return f"{diff // 3600} jam lalu"
 
     except:
-        return "Optimizer error"
+        return "ERROR"
+
 
 # =========================
-# LOAD DATA
+# LOAD
 # =========================
 df = load_positions()
 strategy = load_strategy()
-optimizer = load_optimizer()
 
 # =========================
-# HEADER
+# UI
 # =========================
 st.title("📊 AI TRADING TERMINAL")
 
-# =========================
 # ACCOUNT
-# =========================
 st.subheader("💰 Account")
 st.metric("Equity", "100,000,000")
 
-# =========================
-# AI MODE
-# =========================
+# MODE
 st.subheader("🧠 AI Mode")
 st.write("Mode: SAFE")
 st.write("Market: -")
 
-# =========================
 # STRATEGY
-# =========================
 st.subheader("🧠 AI Strategy")
+st.json(strategy)
 
-if strategy:
-    st.json(strategy)
-else:
-    st.warning("Strategy belum ada")
-
-# =========================
 # OPTIMIZER
-# =========================
 st.subheader("🧠 AI Brain Status")
-st.write(f"Last Optimizer Run: {optimizer}")
+st.write(f"Last Optimizer Run: {optimizer_status()}")
+
+# =========================
+# RAW CSV DEBUG
+# =========================
+st.subheader("🛠 RAW CSV DATA")
+
+if df.empty:
+    st.error("DATAFRAME KOSONG")
+else:
+    st.dataframe(df)
 
 # =========================
 # ALL POSITIONS
 # =========================
 st.subheader("📂 All Positions")
 
-if df.empty:
-    st.warning("positions.csv kosong")
-else:
+if not df.empty:
     st.dataframe(df, use_container_width=True)
 
 # =========================
@@ -135,13 +131,15 @@ if not df.empty:
 
         open_df = df[df["status"] == "OPEN"]
 
+        st.write("OPEN ROWS:", len(open_df))
+
         if open_df.empty:
-            st.info("Tidak ada posisi OPEN")
+            st.warning("Tidak ada OPEN")
         else:
             st.dataframe(open_df, use_container_width=True)
 
 # =========================
-# CLOSED POSITIONS
+# CLOSED
 # =========================
 st.subheader("📈 Closed PnL")
 
@@ -152,6 +150,6 @@ if not df.empty:
         closed_df = df[df["status"] == "CLOSED"]
 
         if closed_df.empty:
-            st.info("Belum ada trade closed")
+            st.info("Belum ada CLOSED")
         else:
-            st.dataframe(closed_df, use_container_width=True)
+            st.dataframe(closed_df)
