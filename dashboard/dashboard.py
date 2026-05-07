@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 # =========================
-# FILE PATH
+# FILES
 # =========================
 POSITIONS_FILE = "data/positions.csv"
 STRATEGY_FILE = "data/strategy.json"
@@ -118,14 +118,18 @@ st.subheader("🧠 AI Brain Status")
 st.write(f"Last Optimizer Run: {optimizer_status()}")
 
 # =========================
-# RAW CSV
+# RAW CSV DATA
 # =========================
 st.subheader("🛠 RAW CSV DATA")
 
 if df.empty:
     st.error("DATAFRAME KOSONG")
 else:
-    st.write(df.astype(str))
+
+    st.markdown(
+        df.astype(str).to_html(index=False),
+        unsafe_allow_html=True
+    )
 
 # =========================
 # ALL POSITIONS
@@ -133,7 +137,11 @@ else:
 st.subheader("📂 All Positions")
 
 if not df.empty:
-    st.write(df.astype(str))
+
+    st.markdown(
+        df.astype(str).to_html(index=False),
+        unsafe_allow_html=True
+    )
 
 # =========================
 # OPEN POSITIONS
@@ -151,7 +159,11 @@ if not df.empty:
         if open_df.empty:
             st.warning("Tidak ada OPEN")
         else:
-            st.write(open_df.astype(str))
+
+            st.markdown(
+                open_df.astype(str).to_html(index=False),
+                unsafe_allow_html=True
+            )
 
 # =========================
 # CLOSED POSITIONS
@@ -167,4 +179,8 @@ if not df.empty:
         if closed_df.empty:
             st.info("Belum ada CLOSED")
         else:
-            st.write(closed_df.astype(str))
+
+            st.markdown(
+                closed_df.astype(str).to_html(index=False),
+                unsafe_allow_html=True
+            )
