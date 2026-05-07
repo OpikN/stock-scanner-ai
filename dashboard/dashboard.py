@@ -22,6 +22,10 @@ from app.portfolio import (
     calculate_floating_pnl
 )
 
+from app.strategy import (
+    detect_market_regime
+)
+
 # =========================
 # PAGE CONFIG
 # =========================
@@ -66,7 +70,9 @@ def load_positions():
 
     except Exception as e:
 
-        st.error(f"ERROR CSV: {e}")
+        st.error(
+            f"ERROR CSV: {e}"
+        )
 
         return pd.DataFrame()
 
@@ -77,7 +83,10 @@ def load_strategy():
 
     try:
 
-        with open(STRATEGY_FILE, "r") as f:
+        with open(
+            STRATEGY_FILE,
+            "r"
+        ) as f:
 
             return json.load(f)
 
@@ -127,6 +136,8 @@ strategy = load_strategy()
 # =========================
 latest_prices = {}
 
+market_regime = "UNKNOWN"
+
 try:
 
     tickers = [
@@ -137,6 +148,9 @@ try:
 
     for t in tickers:
 
+        # =========================
+        # LIVE PRICE
+        # =========================
         data = yf.download(
             t,
             period="1d",
@@ -149,14 +163,20 @@ try:
             close_data = data["Close"]
 
             # dataframe
-            if isinstance(close_data, pd.DataFrame):
+            if isinstance(
+                close_data,
+                pd.DataFrame
+            ):
 
                 latest_prices[t] = float(
                     close_data.iloc[-1, 0]
                 )
 
             # series
-            elif isinstance(close_data, pd.Series):
+            elif isinstance(
+                close_data,
+                pd.Series
+            ):
 
                 latest_prices[t] = float(
                     close_data
@@ -164,12 +184,27 @@ try:
                     .iloc[-1]
                 )
 
-            # fallback
             else:
 
                 latest_prices[t] = float(
                     close_data
                 )
+
+        # =========================
+        # MARKET REGIME
+        # =========================
+        regime_df = yf.download(
+            t,
+            period="5d",
+            interval="1h",
+            progress=False
+        )
+
+        market_regime = detect_market_regime(
+            regime_df
+        )
+
+        break
 
 except Exception as e:
 
@@ -200,7 +235,9 @@ st.title(
 # =========================
 # ACCOUNT
 # =========================
-st.subheader("💰 Account")
+st.subheader(
+    "💰 Account"
+)
 
 col1, col2, col3 = st.columns(3)
 
@@ -228,24 +265,41 @@ with col3:
 # =========================
 # AI MODE
 # =========================
-st.subheader("🧠 AI Mode")
+st.subheader(
+    "🧠 AI Mode"
+)
 
-if floating_pnl >= 0:
+if market_regime == "TRENDING":
 
-    ai_mode = "SAFE"
+    ai_mode = "AGGRESSIVE"
 
-else:
+elif market_regime == "VOLATILE":
+
+    ai_mode = "CAUTIOUS"
+
+elif market_regime == "PANIC":
 
     ai_mode = "DEFENSIVE"
 
-st.write(f"Mode: {ai_mode}")
+else:
 
-st.write("Market: LIVE")
+    ai_mode = "SAFE"
+
+st.write(
+    f"Mode: {ai_mode}"
+)
+
+st.write(
+    f"Market Regime: "
+    f"{market_regime}"
+)
 
 # =========================
 # AI STRATEGY
 # =========================
-st.subheader("🧠 AI Strategy")
+st.subheader(
+    "🧠 AI Strategy"
+)
 
 if strategy:
 
@@ -371,5 +425,5 @@ if not df.empty:
 st.markdown("---")
 
 st.caption(
-    "🔥 AI Adaptive Trading Engine Active"
+    "🔥 REAL MARKET REGIME AI ACTIVE"
 )
