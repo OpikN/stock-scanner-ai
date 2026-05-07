@@ -5,6 +5,23 @@ from app.neural_engine import (
 )
 
 # =========================
+# SAFE VALUE
+# =========================
+def safe_float(value):
+
+    try:
+
+        if isinstance(value, pd.Series):
+
+            return float(value.iloc[0])
+
+        return float(value)
+
+    except:
+
+        return 0
+
+# =========================
 # MARKET REGIME
 # =========================
 def detect_market_regime(df):
@@ -13,15 +30,15 @@ def detect_market_regime(df):
 
         last = df.iloc[-1]
 
-        ema_fast = float(
+        ema_fast = safe_float(
             last["EMA_FAST"]
         )
 
-        ema_slow = float(
+        ema_slow = safe_float(
             last["EMA_SLOW"]
         )
 
-        rsi = float(
+        rsi = safe_float(
             last["RSI"]
         )
 
@@ -47,12 +64,13 @@ def detect_market_regime(df):
 
             return "WEAK"
 
-        # =========================
-        # SIDEWAYS
-        # =========================
         return "SIDEWAYS"
 
-    except:
+    except Exception as e:
+
+        print(
+            f"REGIME ERROR: {e}"
+        )
 
         return "UNKNOWN"
 
@@ -96,50 +114,33 @@ def generate_signal(df):
         last = df.iloc[-1]
 
         # =========================
-        # PRICE FIX
+        # SAFE PRICE
         # =========================
-        close = last["Close"]
+        price = safe_float(
+            last["Close"]
+        )
 
-        if hasattr(close, "iloc"):
-
-            if len(close.shape) > 0:
-
-                price = float(
-                    close.iloc[0]
-                )
-
-            else:
-
-                price = float(close)
-
-        else:
-
-            price = float(close)
-
-        # =========================
-        # INDICATORS
-        # =========================
-        ema_fast = float(
+        ema_fast = safe_float(
             last["EMA_FAST"]
         )
 
-        ema_slow = float(
+        ema_slow = safe_float(
             last["EMA_SLOW"]
         )
 
-        rsi = float(
+        rsi = safe_float(
             last["RSI"]
         )
 
         # =========================
-        # AI NEURAL SCORE
+        # NEURAL SCORE
         # =========================
         confidence = (
             calculate_neural_score(df)
         )
 
         # =========================
-        # BUY SIGNAL
+        # BUY
         # =========================
         if (
 
@@ -164,7 +165,7 @@ def generate_signal(df):
             )
 
         # =========================
-        # SELL SIGNAL
+        # SELL
         # =========================
         if (
 
