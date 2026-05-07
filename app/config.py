@@ -83,7 +83,7 @@ ENABLE_TRADE_RANKING = True
 # =========================
 # AI CONFIDENCE FILTER
 # =========================
-MIN_CONFIDENCE = 70
+MIN_CONFIDENCE = 40
 
 # =========================
 # MAX AI TRADE
