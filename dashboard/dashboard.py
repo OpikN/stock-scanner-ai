@@ -1,7 +1,18 @@
+import sys
+import os
+
+# =========================
+# FIX IMPORT PATH
+# =========================
+sys.path.append(
+    os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..")
+    )
+)
+
 import streamlit as st
 import pandas as pd
 import json
-import os
 import time
 import yfinance as yf
 
@@ -97,7 +108,11 @@ latest_prices = {}
 
 try:
 
-    tickers = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
+    tickers = [
+        "BBCA.JK",
+        "BBRI.JK",
+        "TLKM.JK"
+    ]
 
     for t in tickers:
 
@@ -110,10 +125,13 @@ try:
 
         if not data.empty:
 
-            latest_prices[t] = float(data["Close"].iloc[-1])
+            latest_prices[t] = float(
+                data["Close"].iloc[-1]
+            )
 
-except:
-    pass
+except Exception as e:
+
+    st.error(f"MARKET ERROR: {e}")
 
 # =========================
 # LIVE EQUITY
@@ -121,6 +139,8 @@ except:
 floating_pnl = calculate_floating_pnl(latest_prices)
 
 live_equity = get_live_equity(latest_prices)
+
+closed_equity = get_equity()
 
 # =========================
 # HEADER
@@ -132,25 +152,52 @@ st.title("📊 AI TRADING TERMINAL")
 # =========================
 st.subheader("💰 Account")
 
-st.metric(
-    "Live Equity",
-    f"{live_equity:,.0f}"
-)
+col1, col2, col3 = st.columns(3)
 
-st.metric(
-    "Floating PnL",
-    f"{floating_pnl:,.0f}"
-)
+with col1:
+
+    st.metric(
+        "Closed Equity",
+        f"{closed_equity:,.0f}"
+    )
+
+with col2:
+
+    st.metric(
+        "Live Equity",
+        f"{live_equity:,.0f}"
+    )
+
+with col3:
+
+    pnl_color = "normal"
+
+    if floating_pnl > 0:
+        pnl_color = "normal"
+
+    if floating_pnl < 0:
+        pnl_color = "inverse"
+
+    st.metric(
+        "Floating PnL",
+        f"{floating_pnl:,.0f}"
+    )
 
 # =========================
 # AI MODE
 # =========================
 st.subheader("🧠 AI Mode")
-st.write("Mode: SAFE")
+
+if floating_pnl >= 0:
+    ai_mode = "SAFE"
+else:
+    ai_mode = "DEFENSIVE"
+
+st.write(f"Mode: {ai_mode}")
 st.write("Market: LIVE")
 
 # =========================
-# STRATEGY
+# AI STRATEGY
 # =========================
 st.subheader("🧠 AI Strategy")
 
@@ -160,24 +207,26 @@ else:
     st.warning("Strategy belum ada")
 
 # =========================
-# AI BRAIN
+# AI BRAIN STATUS
 # =========================
 st.subheader("🧠 AI Brain Status")
-st.write(f"Last Optimizer Run: {optimizer_status()}")
+
+st.write(
+    f"Last Optimizer Run: {optimizer_status()}"
+)
 
 # =========================
-# RAW CSV DATA
+# RAW CSV
 # =========================
 st.subheader("🛠 RAW CSV DATA")
 
 if df.empty:
+
     st.error("DATAFRAME KOSONG")
+
 else:
 
-    st.markdown(
-        df.astype(str).to_html(index=False),
-        unsafe_allow_html=True
-    )
+    st.dataframe(df)
 
 # =========================
 # ALL POSITIONS
@@ -186,10 +235,7 @@ st.subheader("📂 All Positions")
 
 if not df.empty:
 
-    st.markdown(
-        df.astype(str).to_html(index=False),
-        unsafe_allow_html=True
-    )
+    st.dataframe(df)
 
 # =========================
 # OPEN POSITIONS
@@ -200,18 +246,24 @@ if not df.empty:
 
     if "status" in df.columns:
 
-        open_df = df[df["status"] == "OPEN"]
+        open_df = df[
+            df["status"] == "OPEN"
+        ]
 
-        st.write("OPEN ROWS:", len(open_df))
+        st.write(
+            "OPEN ROWS:",
+            len(open_df)
+        )
 
         if open_df.empty:
-            st.warning("Tidak ada OPEN")
+
+            st.warning(
+                "Tidak ada posisi OPEN"
+            )
+
         else:
 
-            st.markdown(
-                open_df.astype(str).to_html(index=False),
-                unsafe_allow_html=True
-            )
+            st.dataframe(open_df)
 
 # =========================
 # CLOSED POSITIONS
@@ -222,13 +274,35 @@ if not df.empty:
 
     if "status" in df.columns:
 
-        closed_df = df[df["status"] == "CLOSED"]
+        closed_df = df[
+            df["status"] == "CLOSED"
+        ]
 
         if closed_df.empty:
-            st.info("Belum ada CLOSED")
+
+            st.info(
+                "Belum ada CLOSED"
+            )
+
         else:
 
-            st.markdown(
-                closed_df.astype(str).to_html(index=False),
-                unsafe_allow_html=True
+            st.dataframe(closed_df)
+
+            total_closed = (
+                closed_df["pnl"]
+                .astype(float)
+                .sum()
             )
+
+            st.success(
+                f"TOTAL CLOSED PNL: {total_closed:,.0f}"
+            )
+
+# =========================
+# FOOTER
+# =========================
+st.markdown("---")
+
+st.caption(
+    "🔥 AI Adaptive Trading Engine Active"
+)
