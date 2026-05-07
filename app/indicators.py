@@ -1,32 +1,127 @@
 import pandas as pd
 
 # =========================
-# FIX YFINANCE COLUMNS
+# EMA
 # =========================
-def normalize_columns(df):
+def ema(series, period):
 
-    try:
+    return series.ewm(
+        span=period,
+        adjust=False
+    ).mean()
 
-        # =========================
-        # MULTI INDEX FIX
-        # =========================
-        if isinstance(
-            df.columns,
-            pd.MultiIndex
-        ):
+# =========================
+# RSI
+# =========================
+def rsi(series, period=14):
 
-            df.columns = [
+    delta = series.diff()
 
-                col[0]
+    gain = (
+        delta.where(
+            delta > 0,
+            0
+        )
+    )
 
-                for col in df.columns
-            ]
+    loss = (
+        -delta.where(
+            delta < 0,
+            0
+        )
+    )
 
-        return df
+    avg_gain = gain.rolling(
+        period
+    ).mean()
 
-    except:
+    avg_loss = loss.rolling(
+        period
+    ).mean()
 
-        return df
+    rs = avg_gain / avg_loss
+
+    return (
+        100 -
+        (
+            100 /
+            (1 + rs)
+        )
+    )
+
+# =========================
+# ATR
+# =========================
+def atr(df, period=14):
+
+    high_low = (
+        df["High"] -
+        df["Low"]
+    )
+
+    high_close = (
+        (
+            df["High"] -
+            df["Close"].shift()
+        )
+        .abs()
+    )
+
+    low_close = (
+        (
+            df["Low"] -
+            df["Close"].shift()
+        )
+        .abs()
+    )
+
+    ranges = pd.concat(
+
+        [
+            high_low,
+            high_close,
+            low_close
+        ],
+
+        axis=1
+    )
+
+    true_range = (
+        ranges.max(axis=1)
+    )
+
+    return true_range.rolling(
+        period
+    ).mean()
+
+# =========================
+# MACD
+# =========================
+def macd(series):
+
+    ema12 = ema(
+        series,
+        12
+    )
+
+    ema26 = ema(
+        series,
+        26
+    )
+
+    macd_line = (
+        ema12 - ema26
+    )
+
+    signal_line = ema(
+        macd_line,
+        9
+    )
+
+    return (
+        macd_line,
+        signal_line
+    )
 
 # =========================
 # APPLY INDICATORS
@@ -35,87 +130,48 @@ def apply_indicators(df):
 
     try:
 
-        if df is None:
-
-            return df
-
-        if df.empty:
-
-            return df
-
         # =========================
-        # NORMALIZE
+        # EMA
         # =========================
-        df = normalize_columns(df)
-
-        # =========================
-        # CLOSE FIX
-        # =========================
-        close = df["Close"]
-
-        close = pd.to_numeric(
-
-            close,
-
-            errors="coerce"
+        df["EMA_FAST"] = ema(
+            df["Close"],
+            5
         )
 
-        # =========================
-        # EMA FAST
-        # =========================
-        df["EMA_FAST"] = (
-
-            close
-            .ewm(span=5)
-            .mean()
-        )
-
-        # =========================
-        # EMA SLOW
-        # =========================
-        df["EMA_SLOW"] = (
-
-            close
-            .ewm(span=29)
-            .mean()
+        df["EMA_SLOW"] = ema(
+            df["Close"],
+            29
         )
 
         # =========================
         # RSI
         # =========================
-        delta = close.diff()
-
-        gain = delta.clip(
-            lower=0
+        df["RSI"] = rsi(
+            df["Close"]
         )
 
-        loss = -delta.clip(
-            upper=0
+        # =========================
+        # ATR
+        # =========================
+        df["ATR"] = atr(df)
+
+        # =========================
+        # MACD
+        # =========================
+        (
+            df["MACD"],
+            df["MACD_SIGNAL"]
+        ) = macd(
+            df["Close"]
         )
 
-        avg_gain = (
-            gain
-            .rolling(14)
+        # =========================
+        # VOLUME MA
+        # =========================
+        df["VOL_MA"] = (
+            df["Volume"]
+            .rolling(20)
             .mean()
-        )
-
-        avg_loss = (
-            loss
-            .rolling(14)
-            .mean()
-        )
-
-        rs = avg_gain / avg_loss
-
-        df["RSI"] = (
-
-            100
-            -
-            (
-                100
-                /
-                (1 + rs)
-            )
         )
 
         # =========================
@@ -131,4 +187,4 @@ def apply_indicators(df):
             f"INDICATOR ERROR: {e}"
         )
 
-        return df
+        return pd.DataFrame()
