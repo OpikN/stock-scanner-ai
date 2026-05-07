@@ -1,70 +1,98 @@
 name: AI Scanner
 
 on:
+
   workflow_dispatch:
 
   schedule:
-    - cron: "*/10 * * * *"
-
-permissions:
-  contents: write
+    - cron: "*/30 * * * *"
 
 jobs:
-  run-scanner:
-    runs-on: ubuntu-latest
 
-    env:
-      PYTHONPATH: .
+  scanner:
+
+    runs-on: ubuntu-latest
 
     steps:
 
       # =========================
-      # CHECKOUT REPOSITORY
+      # CHECKOUT
       # =========================
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Checkout Repository
+
+        uses: actions/checkout@v4
+
+        with:
+          fetch-depth: 0
 
       # =========================
-      # SETUP PYTHON
+      # PYTHON
       # =========================
       - name: Setup Python
-        uses: actions/setup-python@v4
+
+        uses: actions/setup-python@v5
+
         with:
           python-version: "3.11"
 
       # =========================
-      # INSTALL DEPENDENCIES
+      # INSTALL
       # =========================
-      - name: Install dependencies
-        run: |
-          pip install yfinance pandas streamlit requests
+      - name: Install Dependencies
 
-      # =========================
-      # CREATE DATA FOLDER
-      # =========================
-      - name: Create data folder
         run: |
-          mkdir -p data
+
+          pip install --upgrade pip
+
+          pip install pandas
+
+          pip install numpy
+
+          pip install yfinance
+
+          pip install requests
 
       # =========================
       # RUN SCANNER
       # =========================
       - name: Run AI Scanner
+
+        env:
+
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
         run: |
+
           python scripts/run_scanner.py
 
       # =========================
-      # COMMIT POSITIONS
+      # GIT CONFIG
       # =========================
-      - name: Commit positions
+      - name: Git Config
+
         run: |
+
           git config --global user.name "github-actions"
+
           git config --global user.email "actions@github.com"
 
-          git add data/positions.csv || true
+      # =========================
+      # AUTO PUSH
+      # =========================
+      - name: Push Updates
 
-          git commit -m "update positions" || echo "no changes"
+        run: |
+
+          git stash
 
           git pull --rebase origin main
+
+          git stash pop || true
+
+          git add .
+
+          git commit -m "auto update" || echo "no changes"
 
           git push
