@@ -146,20 +146,29 @@ try:
 
         if not data.empty:
 
-            close_price = data["Close"]
+            close_data = data["Close"]
 
-            if isinstance(close_price, pd.Series):
+            # dataframe
+            if isinstance(close_data, pd.DataFrame):
 
                 latest_prices[t] = float(
-                    close_price
+                    close_data.iloc[-1, 0]
+                )
+
+            # series
+            elif isinstance(close_data, pd.Series):
+
+                latest_prices[t] = float(
+                    close_data
                     .dropna()
                     .iloc[-1]
                 )
 
+            # fallback
             else:
 
                 latest_prices[t] = float(
-                    close_price
+                    close_data
                 )
 
 except Exception as e:
@@ -362,6 +371,5 @@ if not df.empty:
 st.markdown("---")
 
 st.caption(
-    "🔥 AI Adaptive Trading "
-    "Engine Active"
+    "🔥 AI Adaptive Trading Engine Active"
 )
