@@ -3,6 +3,13 @@ import pandas as pd
 import json
 import os
 import time
+import yfinance as yf
+
+from app.portfolio import (
+    get_equity,
+    get_live_equity,
+    calculate_floating_pnl
+)
 
 # =========================
 # PAGE CONFIG
@@ -84,6 +91,38 @@ df = load_positions()
 strategy = load_strategy()
 
 # =========================
+# LIVE MARKET PRICE
+# =========================
+latest_prices = {}
+
+try:
+
+    tickers = ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
+
+    for t in tickers:
+
+        data = yf.download(
+            t,
+            period="1d",
+            interval="1m",
+            progress=False
+        )
+
+        if not data.empty:
+
+            latest_prices[t] = float(data["Close"].iloc[-1])
+
+except:
+    pass
+
+# =========================
+# LIVE EQUITY
+# =========================
+floating_pnl = calculate_floating_pnl(latest_prices)
+
+live_equity = get_live_equity(latest_prices)
+
+# =========================
 # HEADER
 # =========================
 st.title("📊 AI TRADING TERMINAL")
@@ -92,14 +131,23 @@ st.title("📊 AI TRADING TERMINAL")
 # ACCOUNT
 # =========================
 st.subheader("💰 Account")
-st.metric("Equity", "100,000,000")
+
+st.metric(
+    "Live Equity",
+    f"{live_equity:,.0f}"
+)
+
+st.metric(
+    "Floating PnL",
+    f"{floating_pnl:,.0f}"
+)
 
 # =========================
 # AI MODE
 # =========================
 st.subheader("🧠 AI Mode")
 st.write("Mode: SAFE")
-st.write("Market: -")
+st.write("Market: LIVE")
 
 # =========================
 # STRATEGY
