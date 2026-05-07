@@ -1,26 +1,5 @@
 import pandas as pd
 
-from app.neural_engine import (
-    calculate_neural_score
-)
-
-# =========================
-# SAFE VALUE
-# =========================
-def safe_float(value):
-
-    try:
-
-        if isinstance(value, pd.Series):
-
-            return float(value.iloc[0])
-
-        return float(value)
-
-    except:
-
-        return 0
-
 # =========================
 # MARKET REGIME
 # =========================
@@ -28,51 +7,142 @@ def detect_market_regime(df):
 
     try:
 
-        last = df.iloc[-1]
-
-        ema_fast = safe_float(
-            last["EMA_FAST"]
+        close = float(
+            df["Close"].iloc[-1]
         )
 
-        ema_slow = safe_float(
-            last["EMA_SLOW"]
+        ema_fast = float(
+            df["EMA_FAST"].iloc[-1]
         )
 
-        rsi = safe_float(
-            last["RSI"]
+        ema_slow = float(
+            df["EMA_SLOW"].iloc[-1]
+        )
+
+        atr = float(
+            df["ATR"].iloc[-1]
+        )
+
+        volatility = (
+            atr / close
         )
 
         # =========================
         # TRENDING
         # =========================
         if (
+
             ema_fast > ema_slow
+
             and
-            rsi > 55
+
+            volatility > 0.015
         ):
 
             return "TRENDING"
 
         # =========================
-        # WEAK
+        # SIDEWAYS
         # =========================
         if (
-            ema_fast < ema_slow
-            and
-            rsi < 45
+
+            abs(
+                ema_fast - ema_slow
+            ) / close
+
+            < 0.01
         ):
 
-            return "WEAK"
+            return "SIDEWAYS"
 
-        return "SIDEWAYS"
+        # =========================
+        # WEAK
+        # =========================
+        return "WEAK"
+
+    except:
+
+        return "UNKNOWN"
+
+# =========================
+# NEURAL CONFIDENCE
+# =========================
+def calculate_confidence(
+    df
+):
+
+    try:
+
+        confidence = 0
+
+        ema_fast = float(
+            df["EMA_FAST"].iloc[-1]
+        )
+
+        ema_slow = float(
+            df["EMA_SLOW"].iloc[-1]
+        )
+
+        rsi = float(
+            df["RSI"].iloc[-1]
+        )
+
+        macd = float(
+            df["MACD"].iloc[-1]
+        )
+
+        macd_signal = float(
+            df["MACD_SIGNAL"].iloc[-1]
+        )
+
+        volume = float(
+            df["Volume"].iloc[-1]
+        )
+
+        volume_ma = float(
+            df["VOL_MA"].iloc[-1]
+        )
+
+        # =========================
+        # EMA TREND
+        # =========================
+        if ema_fast > ema_slow:
+
+            confidence += 30
+
+        # =========================
+        # RSI
+        # =========================
+        if 40 <= rsi <= 65:
+
+            confidence += 20
+
+        # =========================
+        # MACD
+        # =========================
+        if macd > macd_signal:
+
+            confidence += 25
+
+        # =========================
+        # VOLUME
+        # =========================
+        if volume > volume_ma:
+
+            confidence += 25
+
+        return round(
+            confidence,
+            2
+        )
 
     except Exception as e:
 
         print(
-            f"REGIME ERROR: {e}"
+            f"CONFIDENCE ERROR: {e}"
         )
 
-        return "UNKNOWN"
+        return 0
 
 # =========================
 # GENERATE SIGNAL
@@ -81,63 +151,27 @@ def generate_signal(df):
 
     try:
 
-        # =========================
-        # VALIDATION
-        # =========================
-        if df is None:
-
-            return (
-                "HOLD",
-                0,
-                0
-            )
-
-        if df.empty:
-
-            return (
-                "HOLD",
-                0,
-                0
-            )
-
-        if len(df) < 20:
-
-            return (
-                "HOLD",
-                0,
-                0
-            )
-
-        # =========================
-        # LAST ROW
-        # =========================
-        last = df.iloc[-1]
-
-        # =========================
-        # SAFE PRICE
-        # =========================
-        price = safe_float(
-            last["Close"]
+        close = float(
+            df["Close"].iloc[-1]
         )
 
-        ema_fast = safe_float(
-            last["EMA_FAST"]
+        ema_fast = float(
+            df["EMA_FAST"].iloc[-1]
         )
 
-        ema_slow = safe_float(
-            last["EMA_SLOW"]
+        ema_slow = float(
+            df["EMA_SLOW"].iloc[-1]
         )
 
-        rsi = safe_float(
-            last["RSI"]
+        rsi = float(
+            df["RSI"].iloc[-1]
         )
 
-        # =========================
-        # NEURAL SCORE
-        # =========================
         confidence = (
-            calculate_neural_score(df)
+            calculate_confidence(df)
         )
+
+        signal = "HOLD"
 
         # =========================
         # BUY
@@ -148,57 +182,29 @@ def generate_signal(df):
 
             and
 
-            rsi > 50
-
-            and
-
-            confidence >= 70
+            rsi < 60
         ):
 
-            return (
-
-                "BUY",
-
-                round(price, 2),
-
-                round(confidence, 2)
-            )
+            signal = "BUY"
 
         # =========================
         # SELL
         # =========================
-        if (
+        elif (
 
             ema_fast < ema_slow
 
             and
 
-            rsi < 45
-
-            and
-
-            confidence >= 70
+            rsi > 40
         ):
 
-            return (
+            signal = "SELL"
 
-                "SELL",
-
-                round(price, 2),
-
-                round(confidence, 2)
-            )
-
-        # =========================
-        # HOLD
-        # =========================
         return (
-
-            "HOLD",
-
-            round(price, 2),
-
-            round(confidence, 2)
+            signal,
+            close,
+            confidence
         )
 
     except Exception as e:
