@@ -45,7 +45,11 @@ def load_positions():
     try:
 
         if not os.path.exists(POSITIONS_FILE):
-            st.error("positions.csv tidak ditemukan")
+
+            st.error(
+                "positions.csv tidak ditemukan"
+            )
+
             return pd.DataFrame()
 
         df = pd.read_csv(
@@ -53,12 +57,17 @@ def load_positions():
             engine="python"
         )
 
-        st.write("DEBUG ROWS:", len(df))
+        st.write(
+            "DEBUG ROWS:",
+            len(df)
+        )
 
         return df
 
     except Exception as e:
+
         st.error(f"ERROR CSV: {e}")
+
         return pd.DataFrame()
 
 # =========================
@@ -67,9 +76,13 @@ def load_positions():
 def load_strategy():
 
     try:
+
         with open(STRATEGY_FILE, "r") as f:
+
             return json.load(f)
+
     except:
+
         return {}
 
 # =========================
@@ -80,25 +93,33 @@ def optimizer_status():
     try:
 
         if not os.path.exists(OPT_FILE):
+
             return "Belum pernah jalan"
 
-        diff = int(time.time() - os.path.getmtime(OPT_FILE))
+        diff = int(
+            time.time() -
+            os.path.getmtime(OPT_FILE)
+        )
 
         if diff < 60:
+
             return f"{diff} detik lalu"
 
         if diff < 3600:
+
             return f"{diff // 60} menit lalu"
 
         return f"{diff // 3600} jam lalu"
 
     except:
+
         return "ERROR"
 
 # =========================
 # LOAD DATA
 # =========================
 df = load_positions()
+
 strategy = load_strategy()
 
 # =========================
@@ -125,27 +146,47 @@ try:
 
         if not data.empty:
 
-            latest_prices[t] = float(
-                data["Close"].iloc[-1]
-            )
+            close_price = data["Close"]
+
+            if isinstance(close_price, pd.Series):
+
+                latest_prices[t] = float(
+                    close_price
+                    .dropna()
+                    .iloc[-1]
+                )
+
+            else:
+
+                latest_prices[t] = float(
+                    close_price
+                )
 
 except Exception as e:
 
-    st.error(f"MARKET ERROR: {e}")
+    st.error(
+        f"MARKET ERROR: {e}"
+    )
 
 # =========================
 # LIVE EQUITY
 # =========================
-floating_pnl = calculate_floating_pnl(latest_prices)
+floating_pnl = calculate_floating_pnl(
+    latest_prices
+)
 
-live_equity = get_live_equity(latest_prices)
+live_equity = get_live_equity(
+    latest_prices
+)
 
 closed_equity = get_equity()
 
 # =========================
 # HEADER
 # =========================
-st.title("📊 AI TRADING TERMINAL")
+st.title(
+    "📊 AI TRADING TERMINAL"
+)
 
 # =========================
 # ACCOUNT
@@ -170,14 +211,6 @@ with col2:
 
 with col3:
 
-    pnl_color = "normal"
-
-    if floating_pnl > 0:
-        pnl_color = "normal"
-
-    if floating_pnl < 0:
-        pnl_color = "inverse"
-
     st.metric(
         "Floating PnL",
         f"{floating_pnl:,.0f}"
@@ -189,11 +222,15 @@ with col3:
 st.subheader("🧠 AI Mode")
 
 if floating_pnl >= 0:
+
     ai_mode = "SAFE"
+
 else:
+
     ai_mode = "DEFENSIVE"
 
 st.write(f"Mode: {ai_mode}")
+
 st.write("Market: LIVE")
 
 # =========================
@@ -202,27 +239,39 @@ st.write("Market: LIVE")
 st.subheader("🧠 AI Strategy")
 
 if strategy:
+
     st.json(strategy)
+
 else:
-    st.warning("Strategy belum ada")
+
+    st.warning(
+        "Strategy belum ada"
+    )
 
 # =========================
-# AI BRAIN STATUS
+# AI BRAIN
 # =========================
-st.subheader("🧠 AI Brain Status")
+st.subheader(
+    "🧠 AI Brain Status"
+)
 
 st.write(
-    f"Last Optimizer Run: {optimizer_status()}"
+    f"Last Optimizer Run: "
+    f"{optimizer_status()}"
 )
 
 # =========================
 # RAW CSV
 # =========================
-st.subheader("🛠 RAW CSV DATA")
+st.subheader(
+    "🛠 RAW CSV DATA"
+)
 
 if df.empty:
 
-    st.error("DATAFRAME KOSONG")
+    st.error(
+        "DATAFRAME KOSONG"
+    )
 
 else:
 
@@ -231,7 +280,9 @@ else:
 # =========================
 # ALL POSITIONS
 # =========================
-st.subheader("📂 All Positions")
+st.subheader(
+    "📂 All Positions"
+)
 
 if not df.empty:
 
@@ -240,7 +291,9 @@ if not df.empty:
 # =========================
 # OPEN POSITIONS
 # =========================
-st.subheader("📡 Open Positions")
+st.subheader(
+    "📡 Open Positions"
+)
 
 if not df.empty:
 
@@ -268,7 +321,9 @@ if not df.empty:
 # =========================
 # CLOSED POSITIONS
 # =========================
-st.subheader("📈 Closed PnL")
+st.subheader(
+    "📈 Closed PnL"
+)
 
 if not df.empty:
 
@@ -286,7 +341,9 @@ if not df.empty:
 
         else:
 
-            st.dataframe(closed_df)
+            st.dataframe(
+                closed_df
+            )
 
             total_closed = (
                 closed_df["pnl"]
@@ -295,7 +352,8 @@ if not df.empty:
             )
 
             st.success(
-                f"TOTAL CLOSED PNL: {total_closed:,.0f}"
+                f"TOTAL CLOSED PNL: "
+                f"{total_closed:,.0f}"
             )
 
 # =========================
@@ -304,5 +362,6 @@ if not df.empty:
 st.markdown("---")
 
 st.caption(
-    "🔥 AI Adaptive Trading Engine Active"
+    "🔥 AI Adaptive Trading "
+    "Engine Active"
 )
