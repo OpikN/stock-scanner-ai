@@ -326,6 +326,39 @@ def update_positions(
                 entry
             )
 
+# =========================
+# PRICE CHANGE DETECTOR
+# =========================
+price_change = round(
+    current - entry,
+    2
+)
+
+if side == "SELL":
+
+    price_change = round(
+        entry - current,
+        2
+    )
+
+# ONLY BIG MOVE
+if abs(price_change) >= 5:
+
+    send_telegram(
+
+        f"📈 PRICE UPDATE\n\n"
+
+        f"{stock}\n\n"
+
+        f"{entry:.2f} "
+        f"→ "
+        f"{current:.2f}\n\n"
+
+        f"PnL:\n"
+
+        f"{pnl:,.0f}"
+    )
+            
             # =========================
             # BUY PNL
             # =========================
