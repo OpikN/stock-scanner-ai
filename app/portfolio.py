@@ -1,59 +1,47 @@
 import pandas as pd
 import os
 import time
+import yfinance as yf
 
 from app.config import (
+    POSITIONS_PATH,
     INITIAL_BALANCE,
-    RISK_SAFE,
-    RISK_AGGRESSIVE,
+    SL_PERCENT,
     TP1_PERCENT,
     TP2_PERCENT,
     BREAK_EVEN_TRIGGER,
     TRAILING_PERCENT,
-    PARTIAL_CLOSE_RATIO
+    PARTIAL_CLOSE_RATIO,
+    RISK_SAFE,
+    RISK_AGGRESSIVE,
+    MAX_OPEN_POSITIONS,
+    MIN_TRADE_SIZE
 )
 
-# =========================
-# FILE
-# =========================
-POSITIONS_FILE = "data/positions.csv"
-
-# =========================
-# CREATE FILE
-# =========================
-def ensure_file():
-
-    os.makedirs("data", exist_ok=True)
-
-    if not os.path.exists(POSITIONS_FILE):
-
-        df = pd.DataFrame(columns=[
-            "time",
-            "stock",
-            "side",
-            "entry",
-            "size",
-            "tp1",
-            "tp2",
-            "sl",
-            "status",
-            "partial",
-            "exit_price",
-            "pnl"
-        ])
-
-        df.to_csv(POSITIONS_FILE, index=False)
+from app.learning import (
+    save_learning,
+    get_ai_learning_score
+)
 
 # =========================
 # LOAD POSITIONS
 # =========================
 def load_positions():
 
-    ensure_file()
-
     try:
-        return pd.read_csv(POSITIONS_FILE)
+
+        if os.path.exists(
+            POSITIONS_PATH
+        ):
+
+            return pd.read_csv(
+                POSITIONS_PATH
+            )
+
+        return pd.DataFrame()
+
     except:
+
         return pd.DataFrame()
 
 # =========================
@@ -61,262 +49,549 @@ def load_positions():
 # =========================
 def save_positions(df):
 
-    ensure_file()
+    try:
 
-    df.to_csv(POSITIONS_FILE, index=False)
+        df.to_csv(
+
+            POSITIONS_PATH,
+
+            index=False
+        )
+
+    except Exception as e:
+
+        print(
+            f"SAVE POSITION ERROR: {e}"
+        )
+
+# =========================
+# LIVE PRICE
+# =========================
+def get_live_price(stock):
+
+    try:
+
+        df = yf.download(
+
+            stock,
+
+            period="1d",
+
+            interval="1m",
+
+            progress=False
+        )
+
+        if df.empty:
+
+            return 0
+
+        close = df["Close"]
+
+        if len(close.shape) > 1:
+
+            return float(
+                close.iloc[-1, 0]
+            )
+
+        return float(
+            close.iloc[-1]
+        )
+
+    except:
+
+        return 0
 
 # =========================
 # CLOSED EQUITY
 # =========================
-def get_equity():
+def get_closed_equity():
 
     df = load_positions()
 
     if df.empty:
+
         return INITIAL_BALANCE
 
     try:
 
-        closed = df[df["status"] == "CLOSED"]
+        closed = df[
+            df["status"] == "CLOSED"
+        ]
 
-        if closed.empty:
-            return INITIAL_BALANCE
+        pnl = closed["pnl"].sum()
 
-        total_pnl = closed["pnl"].astype(float).sum()
+        return round(
 
-        return round(INITIAL_BALANCE + total_pnl, 2)
+            INITIAL_BALANCE + pnl,
+
+            0
+        )
 
     except:
+
         return INITIAL_BALANCE
 
 # =========================
 # FLOATING PNL
 # =========================
-def calculate_floating_pnl(latest_prices):
+def get_floating_pnl():
 
     df = load_positions()
 
     if df.empty:
+
         return 0
 
     total = 0
 
-    for _, row in df.iterrows():
+    try:
 
-        try:
+        open_df = df[
+            df["status"] == "OPEN"
+        ]
 
-            if row["status"] != "OPEN":
-                continue
+        for _, row in open_df.iterrows():
 
             stock = row["stock"]
 
-            if stock not in latest_prices:
+            side = row["side"]
+
+            entry = float(
+                row["entry"]
+            )
+
+            size = float(
+                row["size"]
+            )
+
+            current = get_live_price(
+                stock
+            )
+
+            if current <= 0:
+
                 continue
 
-            entry = float(row["entry"])
-            size = float(row["size"])
+            if side == "BUY":
 
-            current = float(latest_prices[stock])
+                pnl = (
+                    current - entry
+                ) * size
 
-            pnl = (current - entry) * size
+            else:
+
+                pnl = (
+                    entry - current
+                ) * size
 
             total += pnl
 
-        except:
-            pass
+        return round(total, 0)
 
-    return round(total, 2)
+    except:
+
+        return 0
 
 # =========================
 # LIVE EQUITY
 # =========================
-def get_live_equity(latest_prices):
+def get_live_equity():
 
-    base = get_equity()
+    return round(
 
-    floating = calculate_floating_pnl(latest_prices)
+        get_closed_equity()
+        +
+        get_floating_pnl(),
 
-    return round(base + floating, 2)
+        0
+    )
 
 # =========================
-# POSITION SIZE
+# AI POSITION SIZE
 # =========================
-def calculate_size(price, sl_percent, mode="SAFE"):
+def calculate_position_size(
+    entry,
+    aggressive=False
+):
 
-    equity = get_equity()
+    equity = get_live_equity()
 
-    if mode == "AGGRESSIVE":
-        risk = equity * RISK_AGGRESSIVE
-    else:
-        risk = equity * RISK_SAFE
+    ai_score = (
+        get_ai_learning_score()
+    )
 
-    sl_distance = price * sl_percent
+    # =========================
+    # AI BOOST
+    # =========================
+    if ai_score >= 70:
+
+        aggressive = True
+
+    risk = (
+        RISK_AGGRESSIVE
+        if aggressive
+        else RISK_SAFE
+    )
+
+    risk_amount = equity * risk
+
+    sl_distance = (
+        entry * SL_PERCENT
+    )
 
     if sl_distance <= 0:
+
         return 0
 
-    qty = risk / sl_distance
+    size = (
+        risk_amount /
+        sl_distance
+    )
 
-    return round(qty, 4)
+    return round(size, 4)
 
 # =========================
 # OPEN POSITION
 # =========================
-def open_position(stock, side, entry, tp=None, sl=None, mode="SAFE"):
+def open_position(
+    stock,
+    side,
+    entry
+):
 
-    df = load_positions()
+    try:
 
-    if not df.empty:
+        df = load_positions()
 
-        active = df[
-            (df["stock"] == stock) &
-            (df["status"] == "OPEN")
-        ]
+        # =========================
+        # LIMIT
+        # =========================
+        if not df.empty:
 
-        if len(active) > 0:
-            print(f"SKIP DUPLICATE: {stock}")
-            return False
+            open_count = len(
 
-    tp1 = entry * (1 + TP1_PERCENT)
-    tp2 = entry * (1 + TP2_PERCENT)
+                df[
+                    df["status"]
+                    == "OPEN"
+                ]
+            )
 
-    if sl is None:
-        sl = entry * 0.98
+            if (
+                open_count
+                >=
+                MAX_OPEN_POSITIONS
+            ):
 
-    size = calculate_size(
-        entry,
-        abs(entry - sl) / entry,
-        mode
-    )
+                return
 
-    row = {
-        "time": time.time(),
-        "stock": stock,
-        "side": side,
-        "entry": entry,
-        "size": size,
-        "tp1": tp1,
-        "tp2": tp2,
-        "sl": sl,
-        "status": "OPEN",
-        "partial": False,
-        "exit_price": 0,
-        "pnl": 0
-    }
+        # =========================
+        # SIZE
+        # =========================
+        size = calculate_position_size(
 
-    df = pd.concat([
-        df,
-        pd.DataFrame([row])
-    ], ignore_index=True)
+            entry,
 
-    save_positions(df)
+            aggressive=True
+        )
 
-    print(f"OPEN POSITION: {stock} {side}")
+        if size <= 0:
 
-    return True
+            return
 
-# =========================
-# CLOSE POSITION
-# =========================
-def close_position(df, idx, price):
+        # =========================
+        # TP SL
+        # =========================
+        if side == "BUY":
 
-    row = df.loc[idx]
+            sl = (
+                entry *
+                (1 - SL_PERCENT)
+            )
 
-    entry = float(row["entry"])
-    size = float(row["size"])
+            tp1 = (
+                entry *
+                (1 + TP1_PERCENT)
+            )
 
-    pnl = (price - entry) * size
+            tp2 = (
+                entry *
+                (1 + TP2_PERCENT)
+            )
 
-    df.at[idx, "status"] = "CLOSED"
-    df.at[idx, "exit_price"] = price
-    df.at[idx, "pnl"] = round(pnl, 2)
+        else:
 
-    print(f"CLOSE: {row['stock']} PNL={pnl}")
+            sl = (
+                entry *
+                (1 + SL_PERCENT)
+            )
+
+            tp1 = (
+                entry *
+                (1 - TP1_PERCENT)
+            )
+
+            tp2 = (
+                entry *
+                (1 - TP2_PERCENT)
+            )
+
+        new_position = {
+
+            "time":
+                time.time(),
+
+            "stock":
+                stock,
+
+            "side":
+                side,
+
+            "entry":
+                entry,
+
+            "size":
+                size,
+
+            "tp1":
+                tp1,
+
+            "tp2":
+                tp2,
+
+            "sl":
+                sl,
+
+            "status":
+                "OPEN",
+
+            "partial":
+                False,
+
+            "pnl":
+                0.0
+        }
+
+        new_df = pd.DataFrame(
+            [new_position]
+        )
+
+        if df.empty:
+
+            df = new_df
+
+        else:
+
+            df = pd.concat(
+
+                [df, new_df],
+
+                ignore_index=True
+            )
+
+        save_positions(df)
+
+        print(
+            f"OPENED: "
+            f"{stock} "
+            f"{side}"
+        )
+
+    except Exception as e:
+
+        print(
+            f"OPEN ERROR: {e}"
+        )
 
 # =========================
 # UPDATE POSITIONS
 # =========================
-def update_positions(latest_prices):
+def update_positions(
+    latest_prices
+):
 
     df = load_positions()
 
     if df.empty:
-        return
 
-    changed = False
+        return
 
     for idx, row in df.iterrows():
 
         try:
 
             if row["status"] != "OPEN":
+
                 continue
 
             stock = row["stock"]
 
-            if stock not in latest_prices:
-                continue
+            side = row["side"]
 
-            price = float(latest_prices[stock])
+            entry = float(
+                row["entry"]
+            )
 
-            entry = float(row["entry"])
-            tp1 = float(row["tp1"])
-            tp2 = float(row["tp2"])
-            sl = float(row["sl"])
+            size = float(
+                row["size"]
+            )
 
-            partial = str(row["partial"]) == "True"
+            tp1 = float(
+                row["tp1"]
+            )
 
-            # BREAK EVEN
-            if price >= entry * (1 + BREAK_EVEN_TRIGGER):
+            tp2 = float(
+                row["tp2"]
+            )
 
-                if sl < entry:
+            sl = float(
+                row["sl"]
+            )
+
+            partial = bool(
+                row["partial"]
+            )
+
+            current_price = (
+                latest_prices.get(
+                    stock,
+                    entry
+                )
+            )
+
+            # =========================
+            # BUY ENGINE
+            # =========================
+            if side == "BUY":
+
+                pnl = (
+                    current_price
+                    -
+                    entry
+                ) * size
+
+                # =========================
+                # BREAK EVEN
+                # =========================
+                if (
+                    current_price
+                    >=
+                    entry
+                    *
+                    (
+                        1
+                        +
+                        BREAK_EVEN_TRIGGER
+                    )
+                ):
 
                     df.at[idx, "sl"] = entry
 
-                    changed = True
+                # =========================
+                # TRAILING
+                # =========================
+                trailing_sl = (
 
-            # TRAILING STOP
-            new_sl = price * (1 - TRAILING_PERCENT)
+                    current_price
+                    *
+                    (
+                        1
+                        -
+                        TRAILING_PERCENT
+                    )
+                )
 
-            if new_sl > sl:
+                if trailing_sl > sl:
 
-                df.at[idx, "sl"] = round(new_sl, 2)
+                    df.at[idx, "sl"] = (
+                        trailing_sl
+                    )
 
-                changed = True
+                # =========================
+                # PARTIAL CLOSE
+                # =========================
+                if (
 
-            # PARTIAL CLOSE
-            if price >= tp1 and not partial:
+                    current_price
+                    >=
+                    tp1
 
-                size = float(row["size"])
+                    and
 
-                remaining = size * (1 - PARTIAL_CLOSE_RATIO)
+                    not partial
+                ):
 
-                df.at[idx, "size"] = remaining
-                df.at[idx, "partial"] = True
+                    df.at[idx, "size"] = (
 
-                changed = True
+                        size
+                        *
+                        (
+                            1
+                            -
+                            PARTIAL_CLOSE_RATIO
+                        )
+                    )
 
-            # FINAL TP
-            if price >= tp2:
+                    df.at[idx, "partial"] = True
 
-                close_position(df, idx, price)
+                # =========================
+                # FULL CLOSE
+                # =========================
+                if (
 
-                changed = True
+                    current_price
+                    >=
+                    tp2
 
-                continue
+                    or
 
-            # STOP LOSS
-            current_sl = float(df.loc[idx, "sl"])
+                    current_price
+                    <=
+                    df.at[idx, "sl"]
+                ):
 
-            if price <= current_sl:
+                    df.at[idx, "status"] = (
+                        "CLOSED"
+                    )
 
-                close_position(df, idx, price)
+                    df.at[idx, "pnl"] = pnl
 
-                changed = True
+                    # =========================
+                    # AI LEARNING
+                    # =========================
+                    save_learning({
+
+                        "stock":
+                            stock,
+
+                        "side":
+                            side,
+
+                        "entry":
+                            entry,
+
+                        "exit":
+                            current_price,
+
+                        "pnl":
+                            pnl,
+
+                        "regime":
+                            "LIVE",
+
+                        "confidence":
+                            0
+                    })
+
+            # =========================
+            # SAVE LIVE PNL
+            # =========================
+            df.at[idx, "pnl"] = pnl
 
         except Exception as e:
 
-            print(f"UPDATE ERROR: {e}")
+            print(
+                f"UPDATE ERROR: {e}"
+            )
 
-    if changed:
-        save_positions(df)
+    save_positions(df)
