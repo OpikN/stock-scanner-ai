@@ -104,7 +104,6 @@ def calculate_position_size(
         sl_distance
     )
 
-    # MAX 20% EQUITY
     max_position_value = (
         equity * 0.2
     )
@@ -134,9 +133,6 @@ def open_position(
 
     df = load_positions()
 
-    # =========================
-    # MAX OPEN
-    # =========================
     if not df.empty:
 
         open_count = len(
@@ -159,9 +155,6 @@ def open_position(
         entry
     )
 
-    # =========================
-    # BUY
-    # =========================
     if side == "BUY":
 
         sl = (
@@ -179,9 +172,6 @@ def open_position(
             (1 + TP2_PERCENT)
         )
 
-    # =========================
-    # SELL
-    # =========================
     else:
 
         sl = (
@@ -326,41 +316,8 @@ def update_positions(
                 entry
             )
 
-# =========================
-# PRICE CHANGE DETECTOR
-# =========================
-price_change = round(
-    current - entry,
-    2
-)
-
-if side == "SELL":
-
-    price_change = round(
-        entry - current,
-        2
-    )
-
-# ONLY BIG MOVE
-if abs(price_change) >= 5:
-
-    send_telegram(
-
-        f"📈 PRICE UPDATE\n\n"
-
-        f"{stock}\n\n"
-
-        f"{entry:.2f} "
-        f"→ "
-        f"{current:.2f}\n\n"
-
-        f"PnL:\n"
-
-        f"{pnl:,.0f}"
-    )
-            
             # =========================
-            # BUY PNL
+            # CALCULATE PNL
             # =========================
             if side == "BUY":
 
@@ -368,9 +325,6 @@ if abs(price_change) >= 5:
                     current - entry
                 ) * size
 
-            # =========================
-            # SELL PNL
-            # =========================
             else:
 
                 pnl = (
@@ -380,7 +334,43 @@ if abs(price_change) >= 5:
             df.at[idx, "pnl"] = pnl
 
             # =========================
-            # LIVE POSITION REPORT
+            # PRICE CHANGE DETECTOR
+            # =========================
+            price_change = round(
+                current - entry,
+                2
+            )
+
+            if side == "SELL":
+
+                price_change = round(
+                    entry - current,
+                    2
+                )
+
+            if (
+                abs(price_change) >= 5
+                and
+                abs(pnl) >= 100000
+            ):
+
+                send_telegram(
+
+                    f"📈 PRICE UPDATE\n\n"
+
+                    f"{stock}\n\n"
+
+                    f"{entry:.2f} "
+                    f"→ "
+                    f"{current:.2f}\n\n"
+
+                    f"PnL:\n"
+
+                    f"{pnl:,.0f}"
+                )
+
+            # =========================
+            # LIVE POSITION
             # =========================
             if abs(pnl) > 100000:
 
@@ -416,13 +406,9 @@ if abs(price_change) >= 5:
             # =========================
             if side == "BUY":
 
-                # PARTIAL
                 if (
-
                     current >= tp1
-
                     and
-
                     not partial
                 ):
 
@@ -440,9 +426,7 @@ if abs(price_change) >= 5:
                         f"PnL: {pnl:,.0f}"
                     )
 
-                # TRAILING
                 trailing_sl = (
-
                     current *
                     (
                         1 -
@@ -467,13 +451,9 @@ if abs(price_change) >= 5:
                         f"{trailing_sl:.2f}"
                     )
 
-                # CLOSE
                 if (
-
                     current >= tp2
-
                     or
-
                     current <= sl
                 ):
 
@@ -508,13 +488,9 @@ if abs(price_change) >= 5:
             # =========================
             else:
 
-                # PARTIAL
                 if (
-
                     current <= tp1
-
                     and
-
                     not partial
                 ):
 
@@ -532,9 +508,7 @@ if abs(price_change) >= 5:
                         f"PnL: {pnl:,.0f}"
                     )
 
-                # TRAILING
                 trailing_sl = (
-
                     current *
                     (
                         1 +
@@ -559,13 +533,9 @@ if abs(price_change) >= 5:
                         f"{trailing_sl:.2f}"
                     )
 
-                # CLOSE
                 if (
-
                     current <= tp2
-
                     or
-
                     current >= sl
                 ):
 
