@@ -1,10 +1,9 @@
 import yfinance as yf
 import pandas as pd
+import time
 
 from app.config import (
     STOCKS,
-    DATA_PATH,
-    MAX_TOP_TRADES,
     MIN_CONFIDENCE
 )
 
@@ -17,12 +16,6 @@ from app.strategy import (
     detect_market_regime
 )
 
-from app.storage import (
-    save_trade
-)
-
-from app.logger import log
-
 from app.portfolio import (
     open_position,
     update_positions
@@ -32,36 +25,60 @@ from app.telegram import (
     send_telegram
 )
 
+from app.telegram_reports import (
+    send_high_confidence_alert
+)
+
 # =========================
-# SAFE FLOAT
+# LOGGER
 # =========================
-def safe_float(value):
+def log(message):
+
+    print(f"[LOG] {message}")
+
+# =========================
+# DOWNLOAD MARKET DATA
+# =========================
+def get_data(stock):
 
     try:
 
-        if isinstance(
-            value,
-            pd.Series
-        ):
+        df = yf.download(
 
-            return float(
-                value.iloc[0]
-            )
+            stock,
 
-        return float(value)
+            period="3mo",
 
-    except:
+            interval="1d",
 
-        return 0
+            auto_adjust=True,
+
+            progress=False
+        )
+
+        if df.empty:
+
+            return pd.DataFrame()
+
+        df = apply_indicators(df)
+
+        return df
+
+    except Exception as e:
+
+        print(
+            f"DATA ERROR {stock}: {e}"
+        )
+
+        return pd.DataFrame()
 
 # =========================
-# MAIN
+# MAIN SCANNER
 # =========================
 def run():
 
     log(
-        "🚀 SCANNER START "
-        "(TRADE RANKING AI)"
+        "🚀 SCANNER START (TRADE RANKING AI)"
     )
 
     send_telegram(
@@ -70,51 +87,43 @@ def run():
 
     latest_prices = {}
 
-    candidates = []
-
+    # =========================
+    # LOOP STOCKS
+    # =========================
     for stock in STOCKS:
 
         try:
 
-            df = yf.download(
-
-                stock,
-
-                period="3mo",
-
-                interval="1d",
-
-                auto_adjust=True,
-
-                progress=False
-            )
+            df = get_data(stock)
 
             if df.empty:
+
                 continue
 
-            df = apply_indicators(df)
+            # =========================
+            # SIGNAL
+            # =========================
+            (
+                signal,
+                price,
+                confidence
+            ) = generate_signal(df)
 
-            if df.empty:
-                continue
-
-            signal, price, confidence = (
-                generate_signal(df)
+            # =========================
+            # MARKET REGIME
+            # =========================
+            regime = detect_market_regime(
+                df
             )
 
-            regime = (
-                detect_market_regime(df)
-            )
-
-            if price <= 0:
-
-                price = safe_float(
-
-                    df["Close"]
-                    .iloc[-1]
-                )
-
+            # =========================
+            # SAVE PRICE
+            # =========================
             latest_prices[stock] = price
 
+            # =========================
+            # LOG TERMINAL
+            # =========================
             log(
 
                 f"{stock} "
@@ -130,107 +139,83 @@ def run():
                 f"| {regime}"
             )
 
+            # =========================
+            # TELEGRAM UPDATE
+            # =========================
             send_telegram(
 
                 f"🧠 MARKET UPDATE\n\n"
 
-                f"{stock}\n"
+                f"{stock}\n\n"
 
-                f"Signal: {signal}\n"
+                f"Signal: "
+                f"{signal}\n"
 
-                f"Price: {price:.2f}\n"
+                f"Price: "
+                f"{price:.2f}\n"
 
                 f"Confidence: "
                 f"{confidence}%\n"
 
-                f"Regime: {regime}"
+                f"Regime: "
+                f"{regime}"
             )
 
-            trade_data = {
+            # =========================
+            # HIGH CONFIDENCE ALERT
+            # =========================
+            if confidence >= 80:
 
-                "stock":
-                    stock,
+                send_high_confidence_alert(
 
-                "signal":
-                    signal,
+                    stock=stock,
 
-                "price":
-                    price,
+                    signal=signal,
 
-                "confidence":
-                    confidence,
+                    confidence=confidence,
 
-                "regime":
-                    regime
-            }
+                    regime=regime,
 
-            save_trade(
-                DATA_PATH,
-                trade_data
-            )
+                    price=price
+                )
 
+            # =========================
+            # OPEN POSITION
+            # =========================
             if (
 
-                signal in
-                ["BUY", "SELL"]
+                signal in [
+                    "BUY",
+                    "SELL"
+                ]
 
                 and
 
-                confidence >=
-                MIN_CONFIDENCE
+                confidence >= MIN_CONFIDENCE
             ):
 
-                candidates.append({
+                open_position(
 
-                    "stock":
-                        stock,
+                    stock=stock,
 
-                    "signal":
-                        signal,
+                    side=signal,
 
-                    "price":
-                        price,
-
-                    "confidence":
-                        confidence,
-
-                    "regime":
-                        regime
-                })
+                    entry=price
+                )
 
         except Exception as e:
 
-            log(
-                f"{stock} ERROR {e}"
+            print(
+                f"SCANNER ERROR {stock}: {e}"
             )
 
-    ranked = sorted(
-
-        candidates,
-
-        key=lambda x:
-            x["confidence"],
-
-        reverse=True
-    )
-
-    top = ranked[:MAX_TOP_TRADES]
-
-    for trade in top:
-
-        open_position(
-
-            stock=trade["stock"],
-
-            side=trade["signal"],
-
-            entry=trade["price"]
-        )
-
+    # =========================
+    # UPDATE PORTFOLIO
+    # =========================
     update_positions(
         latest_prices
     )
 
-if __name__ == "__main__":
-
-    run()
+    log(
+        "✅ SCANNER FINISHED"
+    )
