@@ -4,12 +4,20 @@ import json
 import os
 import time
 
-st.set_page_config(layout="wide")
+# =========================
+# PAGE CONFIG
+# =========================
+st.set_page_config(
+    page_title="AI Trading Terminal",
+    layout="wide"
+)
 
+# =========================
+# FILE PATH
+# =========================
 POSITIONS_FILE = "data/positions.csv"
 STRATEGY_FILE = "data/strategy.json"
 OPT_FILE = "data/last_opt.txt"
-
 
 # =========================
 # LOAD POSITIONS
@@ -22,13 +30,11 @@ def load_positions():
             st.error("positions.csv tidak ditemukan")
             return pd.DataFrame()
 
-        # FORCE STRING SAFE
         df = pd.read_csv(
             POSITIONS_FILE,
             engine="python"
         )
 
-        # DEBUG
         st.write("DEBUG ROWS:", len(df))
 
         return df
@@ -36,7 +42,6 @@ def load_positions():
     except Exception as e:
         st.error(f"ERROR CSV: {e}")
         return pd.DataFrame()
-
 
 # =========================
 # LOAD STRATEGY
@@ -49,9 +54,8 @@ def load_strategy():
     except:
         return {}
 
-
 # =========================
-# OPT STATUS
+# OPTIMIZER STATUS
 # =========================
 def optimizer_status():
 
@@ -73,44 +77,55 @@ def optimizer_status():
     except:
         return "ERROR"
 
-
 # =========================
-# LOAD
+# LOAD DATA
 # =========================
 df = load_positions()
 strategy = load_strategy()
 
 # =========================
-# UI
+# HEADER
 # =========================
 st.title("📊 AI TRADING TERMINAL")
 
+# =========================
 # ACCOUNT
+# =========================
 st.subheader("💰 Account")
 st.metric("Equity", "100,000,000")
 
-# MODE
+# =========================
+# AI MODE
+# =========================
 st.subheader("🧠 AI Mode")
 st.write("Mode: SAFE")
 st.write("Market: -")
 
+# =========================
 # STRATEGY
+# =========================
 st.subheader("🧠 AI Strategy")
-st.json(strategy)
 
-# OPTIMIZER
+if strategy:
+    st.json(strategy)
+else:
+    st.warning("Strategy belum ada")
+
+# =========================
+# AI BRAIN
+# =========================
 st.subheader("🧠 AI Brain Status")
 st.write(f"Last Optimizer Run: {optimizer_status()}")
 
 # =========================
-# RAW CSV DEBUG
+# RAW CSV
 # =========================
 st.subheader("🛠 RAW CSV DATA")
 
 if df.empty:
     st.error("DATAFRAME KOSONG")
 else:
-    st.dataframe(df)
+    st.write(df.astype(str))
 
 # =========================
 # ALL POSITIONS
@@ -118,7 +133,7 @@ else:
 st.subheader("📂 All Positions")
 
 if not df.empty:
-    st.dataframe(df, use_container_width=True)
+    st.write(df.astype(str))
 
 # =========================
 # OPEN POSITIONS
@@ -136,10 +151,10 @@ if not df.empty:
         if open_df.empty:
             st.warning("Tidak ada OPEN")
         else:
-            st.dataframe(open_df, use_container_width=True)
+            st.write(open_df.astype(str))
 
 # =========================
-# CLOSED
+# CLOSED POSITIONS
 # =========================
 st.subheader("📈 Closed PnL")
 
@@ -152,4 +167,4 @@ if not df.empty:
         if closed_df.empty:
             st.info("Belum ada CLOSED")
         else:
-            st.dataframe(closed_df)
+            st.write(closed_df.astype(str))
