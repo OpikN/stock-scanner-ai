@@ -1,25 +1,47 @@
 import pandas as pd
 
 # =========================
+# SAFE FLOAT
+# =========================
+def safe_float(value):
+
+    try:
+
+        if isinstance(
+            value,
+            pd.Series
+        ):
+
+            return float(
+                value.iloc[0]
+            )
+
+        return float(value)
+
+    except:
+
+        return 0
+
+# =========================
 # MARKET REGIME
 # =========================
 def detect_market_regime(df):
 
     try:
 
-        close = float(
+        close = safe_float(
             df["Close"].iloc[-1]
         )
 
-        ema_fast = float(
+        ema_fast = safe_float(
             df["EMA_FAST"].iloc[-1]
         )
 
-        ema_slow = float(
+        ema_slow = safe_float(
             df["EMA_SLOW"].iloc[-1]
         )
 
-        atr = float(
+        atr = safe_float(
             df["ATR"].iloc[-1]
         )
 
@@ -55,56 +77,55 @@ def detect_market_regime(df):
 
             return "SIDEWAYS"
 
-        # =========================
-        # WEAK
-        # =========================
         return "WEAK"
 
-    except:
+    except Exception as e:
+
+        print(
+            f"REGIME ERROR: {e}"
+        )
 
         return "UNKNOWN"
 
 # =========================
-# NEURAL CONFIDENCE
+# CONFIDENCE
 # =========================
-def calculate_confidence(
-    df
-):
+def calculate_confidence(df):
 
     try:
 
         confidence = 0
 
-        ema_fast = float(
+        ema_fast = safe_float(
             df["EMA_FAST"].iloc[-1]
         )
 
-        ema_slow = float(
+        ema_slow = safe_float(
             df["EMA_SLOW"].iloc[-1]
         )
 
-        rsi = float(
+        rsi = safe_float(
             df["RSI"].iloc[-1]
         )
 
-        macd = float(
+        macd = safe_float(
             df["MACD"].iloc[-1]
         )
 
-        macd_signal = float(
+        macd_signal = safe_float(
             df["MACD_SIGNAL"].iloc[-1]
         )
 
-        volume = float(
+        volume = safe_float(
             df["Volume"].iloc[-1]
         )
 
-        volume_ma = float(
+        volume_ma = safe_float(
             df["VOL_MA"].iloc[-1]
         )
 
         # =========================
-        # EMA TREND
+        # EMA
         # =========================
         if ema_fast > ema_slow:
 
@@ -145,25 +166,25 @@ def calculate_confidence(
         return 0
 
 # =========================
-# GENERATE SIGNAL
+# SIGNAL
 # =========================
 def generate_signal(df):
 
     try:
 
-        close = float(
+        close = safe_float(
             df["Close"].iloc[-1]
         )
 
-        ema_fast = float(
+        ema_fast = safe_float(
             df["EMA_FAST"].iloc[-1]
         )
 
-        ema_slow = float(
+        ema_slow = safe_float(
             df["EMA_SLOW"].iloc[-1]
         )
 
-        rsi = float(
+        rsi = safe_float(
             df["RSI"].iloc[-1]
         )
 
