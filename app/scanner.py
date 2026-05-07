@@ -101,6 +101,10 @@ def run():
         "(TRADE RANKING AI)"
     )
 
+    send_telegram(
+    "🔥 AI Scanner Online"
+    )
+    
     latest_prices = {}
 
     candidates = []
