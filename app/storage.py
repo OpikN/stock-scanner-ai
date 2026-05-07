@@ -1,17 +1,21 @@
 import pandas as pd
 import os
+import json
+import time
 
 # =========================
 # SAVE TRADE
 # =========================
-def save_trade(path, data):
+def save_trade(
+    path,
+    trade_data
+):
 
     try:
 
-        # =========================
-        # CREATE DATAFRAME
-        # =========================
-        new_df = pd.DataFrame([data])
+        new_df = pd.DataFrame(
+            [trade_data]
+        )
 
         # =========================
         # FILE EXISTS
@@ -31,9 +35,6 @@ def save_trade(path, data):
 
             df = new_df
 
-        # =========================
-        # SAVE CSV
-        # =========================
         df.to_csv(
 
             path,
@@ -48,18 +49,114 @@ def save_trade(path, data):
         )
 
 # =========================
-# LOAD CSV
+# SAVE STRATEGY
 # =========================
-def load_csv(path):
+def save_strategy(
+    strategy,
+    path="data/strategy.json"
+):
 
     try:
 
-        if os.path.exists(path):
+        with open(
 
-            return pd.read_csv(path)
+            path,
 
-        return pd.DataFrame()
+            "w"
+        ) as f:
 
-    except:
+            json.dump(
 
-        return pd.DataFrame()
+                strategy,
+
+                f,
+
+                indent=4
+            )
+
+    except Exception as e:
+
+        print(
+            f"SAVE STRATEGY ERROR: {e}"
+        )
+
+# =========================
+# LOAD STRATEGY
+# =========================
+def load_strategy(
+    path="data/strategy.json"
+):
+
+    try:
+
+        if not os.path.exists(path):
+
+            return {}
+
+        with open(
+            path,
+            "r"
+        ) as f:
+
+            return json.load(f)
+
+    except Exception as e:
+
+        print(
+            f"LOAD STRATEGY ERROR: {e}"
+        )
+
+        return {}
+
+# =========================
+# SAVE JSON
+# =========================
+def save_json(
+    path,
+    data
+):
+
+    try:
+
+        with open(
+            path,
+            "w"
+        ) as f:
+
+            json.dump(
+                data,
+                f,
+                indent=4
+            )
+
+    except Exception as e:
+
+        print(
+            f"SAVE JSON ERROR: {e}"
+        )
+
+# =========================
+# LOAD JSON
+# =========================
+def load_json(path):
+
+    try:
+
+        if not os.path.exists(path):
+
+            return {}
+
+        with open(
+            path,
+            "r"
+        ) as f:
+
+            return json.load(f)
+
+    except Exception as e:
+
+        print(
+            f"LOAD JSON ERROR: {e}"
+        )
+
+        return {}
