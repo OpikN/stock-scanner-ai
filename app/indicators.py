@@ -1,6 +1,34 @@
 import pandas as pd
 
 # =========================
+# FIX YFINANCE COLUMNS
+# =========================
+def normalize_columns(df):
+
+    try:
+
+        # =========================
+        # MULTI INDEX FIX
+        # =========================
+        if isinstance(
+            df.columns,
+            pd.MultiIndex
+        ):
+
+            df.columns = [
+
+                col[0]
+
+                for col in df.columns
+            ]
+
+        return df
+
+    except:
+
+        return df
+
+# =========================
 # APPLY INDICATORS
 # =========================
 def apply_indicators(df):
@@ -16,18 +44,27 @@ def apply_indicators(df):
             return df
 
         # =========================
+        # NORMALIZE
+        # =========================
+        df = normalize_columns(df)
+
+        # =========================
         # CLOSE FIX
         # =========================
         close = df["Close"]
 
-        if isinstance(close, pd.DataFrame):
+        close = pd.to_numeric(
 
-            close = close.iloc[:, 0]
+            close,
+
+            errors="coerce"
+        )
 
         # =========================
         # EMA FAST
         # =========================
         df["EMA_FAST"] = (
+
             close
             .ewm(span=5)
             .mean()
@@ -37,6 +74,7 @@ def apply_indicators(df):
         # EMA SLOW
         # =========================
         df["EMA_SLOW"] = (
+
             close
             .ewm(span=29)
             .mean()
@@ -47,9 +85,13 @@ def apply_indicators(df):
         # =========================
         delta = close.diff()
 
-        gain = delta.clip(lower=0)
+        gain = delta.clip(
+            lower=0
+        )
 
-        loss = -delta.clip(upper=0)
+        loss = -delta.clip(
+            upper=0
+        )
 
         avg_gain = (
             gain
@@ -66,6 +108,7 @@ def apply_indicators(df):
         rs = avg_gain / avg_loss
 
         df["RSI"] = (
+
             100
             -
             (
@@ -76,7 +119,7 @@ def apply_indicators(df):
         )
 
         # =========================
-        # CLEAN NAN
+        # CLEAN
         # =========================
         df = df.dropna()
 
