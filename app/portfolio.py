@@ -14,8 +14,7 @@ from app.config import (
     PARTIAL_CLOSE_RATIO,
     RISK_SAFE,
     RISK_AGGRESSIVE,
-    MAX_OPEN_POSITIONS,
-    MIN_TRADE_SIZE
+    MAX_OPEN_POSITIONS
 )
 
 from app.learning import (
@@ -77,7 +76,9 @@ def get_live_price(stock):
 
             period="1d",
 
-            interval="1m",
+            interval="1d",
+
+            auto_adjust=True,
 
             progress=False
         )
@@ -88,11 +89,12 @@ def get_live_price(stock):
 
         close = df["Close"]
 
-        if len(close.shape) > 1:
+        if isinstance(
+            close,
+            pd.DataFrame
+        ):
 
-            return float(
-                close.iloc[-1, 0]
-            )
+            close = close.iloc[:, 0]
 
         return float(
             close.iloc[-1]
@@ -121,10 +123,12 @@ def get_closed_equity():
 
         pnl = closed["pnl"].sum()
 
+        equity = (
+            INITIAL_BALANCE + pnl
+        )
+
         return round(
-
-            INITIAL_BALANCE + pnl,
-
+            max(equity, 0),
             0
         )
 
@@ -173,12 +177,18 @@ def get_floating_pnl():
 
                 continue
 
+            # =========================
+            # BUY
+            # =========================
             if side == "BUY":
 
                 pnl = (
                     current - entry
                 ) * size
 
+            # =========================
+            # SELL
+            # =========================
             else:
 
                 pnl = (
@@ -189,7 +199,11 @@ def get_floating_pnl():
 
         return round(total, 0)
 
-    except:
+    except Exception as e:
+
+        print(
+            f"FLOATING ERROR: {e}"
+        )
 
         return 0
 
@@ -198,17 +212,22 @@ def get_floating_pnl():
 # =========================
 def get_live_equity():
 
-    return round(
+    equity = (
 
         get_closed_equity()
-        +
-        get_floating_pnl(),
 
+        +
+
+        get_floating_pnl()
+    )
+
+    return round(
+        max(equity, 0),
         0
     )
 
 # =========================
-# AI POSITION SIZE
+# POSITION SIZE
 # =========================
 def calculate_position_size(
     entry,
@@ -234,7 +253,9 @@ def calculate_position_size(
         else RISK_SAFE
     )
 
-    risk_amount = equity * risk
+    risk_amount = (
+        equity * risk
+    )
 
     sl_distance = (
         entry * SL_PERCENT
@@ -244,10 +265,29 @@ def calculate_position_size(
 
         return 0
 
+    # =========================
+    # RAW SIZE
+    # =========================
     size = (
         risk_amount /
         sl_distance
     )
+
+    # =========================
+    # MAX POSITION LIMIT
+    # =========================
+    max_position_value = (
+        equity * 0.2
+    )
+
+    max_size = (
+        max_position_value /
+        entry
+    )
+
+    if size > max_size:
+
+        size = max_size
 
     return round(size, 4)
 
@@ -265,7 +305,7 @@ def open_position(
         df = load_positions()
 
         # =========================
-        # LIMIT
+        # MAX OPEN
         # =========================
         if not df.empty:
 
@@ -300,7 +340,7 @@ def open_position(
             return
 
         # =========================
-        # TP SL
+        # TP / SL
         # =========================
         if side == "BUY":
 
@@ -460,7 +500,7 @@ def update_positions(
             )
 
             # =========================
-            # BUY ENGINE
+            # BUY PNL
             # =========================
             if side == "BUY":
 
@@ -470,121 +510,129 @@ def update_positions(
                     entry
                 ) * size
 
-                # =========================
-                # BREAK EVEN
-                # =========================
-                if (
-                    current_price
-                    >=
+            else:
+
+                pnl = (
                     entry
-                    *
-                    (
-                        1
-                        +
-                        BREAK_EVEN_TRIGGER
-                    )
-                ):
-
-                    df.at[idx, "sl"] = entry
-
-                # =========================
-                # TRAILING
-                # =========================
-                trailing_sl = (
-
+                    -
                     current_price
+                ) * size
+
+            # =========================
+            # BREAK EVEN
+            # =========================
+            if (
+                current_price
+                >=
+                entry
+                *
+                (
+                    1
+                    +
+                    BREAK_EVEN_TRIGGER
+                )
+            ):
+
+                df.at[idx, "sl"] = entry
+
+            # =========================
+            # TRAILING STOP
+            # =========================
+            trailing_sl = (
+
+                current_price
+                *
+                (
+                    1
+                    -
+                    TRAILING_PERCENT
+                )
+            )
+
+            if trailing_sl > sl:
+
+                df.at[idx, "sl"] = (
+                    trailing_sl
+                )
+
+            # =========================
+            # PARTIAL CLOSE
+            # =========================
+            if (
+
+                current_price
+                >=
+                tp1
+
+                and
+
+                not partial
+            ):
+
+                df.at[idx, "size"] = (
+
+                    size
                     *
                     (
                         1
                         -
-                        TRAILING_PERCENT
+                        PARTIAL_CLOSE_RATIO
                     )
                 )
 
-                if trailing_sl > sl:
-
-                    df.at[idx, "sl"] = (
-                        trailing_sl
-                    )
-
-                # =========================
-                # PARTIAL CLOSE
-                # =========================
-                if (
-
-                    current_price
-                    >=
-                    tp1
-
-                    and
-
-                    not partial
-                ):
-
-                    df.at[idx, "size"] = (
-
-                        size
-                        *
-                        (
-                            1
-                            -
-                            PARTIAL_CLOSE_RATIO
-                        )
-                    )
-
-                    df.at[idx, "partial"] = True
-
-                # =========================
-                # FULL CLOSE
-                # =========================
-                if (
-
-                    current_price
-                    >=
-                    tp2
-
-                    or
-
-                    current_price
-                    <=
-                    df.at[idx, "sl"]
-                ):
-
-                    df.at[idx, "status"] = (
-                        "CLOSED"
-                    )
-
-                    df.at[idx, "pnl"] = pnl
-
-                    # =========================
-                    # AI LEARNING
-                    # =========================
-                    save_learning({
-
-                        "stock":
-                            stock,
-
-                        "side":
-                            side,
-
-                        "entry":
-                            entry,
-
-                        "exit":
-                            current_price,
-
-                        "pnl":
-                            pnl,
-
-                        "regime":
-                            "LIVE",
-
-                        "confidence":
-                            0
-                    })
+                df.at[idx, "partial"] = True
 
             # =========================
-            # SAVE LIVE PNL
+            # FULL CLOSE
+            # =========================
+            if (
+
+                current_price
+                >=
+                tp2
+
+                or
+
+                current_price
+                <=
+                df.at[idx, "sl"]
+            ):
+
+                df.at[idx, "status"] = (
+                    "CLOSED"
+                )
+
+                df.at[idx, "pnl"] = pnl
+
+                # =========================
+                # SAVE LEARNING
+                # =========================
+                save_learning({
+
+                    "stock":
+                        stock,
+
+                    "side":
+                        side,
+
+                    "entry":
+                        entry,
+
+                    "exit":
+                        current_price,
+
+                    "pnl":
+                        pnl,
+
+                    "regime":
+                        "LIVE",
+
+                    "confidence":
+                        0
+                })
+
+            # =========================
+            # UPDATE PNL
             # =========================
             df.at[idx, "pnl"] = pnl
 
