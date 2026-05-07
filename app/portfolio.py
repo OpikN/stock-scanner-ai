@@ -8,9 +8,7 @@ from app.config import (
     SL_PERCENT,
     TP1_PERCENT,
     TP2_PERCENT,
-    BREAK_EVEN_TRIGGER,
     TRAILING_PERCENT,
-    PARTIAL_CLOSE_RATIO,
     RISK_SAFE,
     RISK_AGGRESSIVE,
     MAX_OPEN_POSITIONS
@@ -347,6 +345,38 @@ def update_positions(
                 ) * size
 
             df.at[idx, "pnl"] = pnl
+
+            # =========================
+            # LIVE POSITION REPORT
+            # =========================
+            if abs(pnl) > 100000:
+
+                send_telegram(
+
+                    f"📊 LIVE POSITION\n\n"
+
+                    f"{stock}\n"
+
+                    f"{side}\n\n"
+
+                    f"Entry: "
+                    f"{entry:.2f}\n"
+
+                    f"Current: "
+                    f"{current:.2f}\n\n"
+
+                    f"PnL:\n"
+
+                    f"{pnl:,.0f}\n\n"
+
+                    f"SL:\n"
+
+                    f"{sl:.2f}\n\n"
+
+                    f"TP1:\n"
+
+                    f"{tp1:.2f}"
+                )
 
             # =========================
             # BUY LOGIC
