@@ -1,6 +1,7 @@
 import yfinance as yf
 from datetime import datetime
 import requests
+import pandas as pd
 
 from app.config import (
     STOCKS,
@@ -11,14 +12,18 @@ from app.config import (
     MIN_CONFIDENCE
 )
 
-from app.indicators import apply_indicators
+from app.indicators import (
+    apply_indicators
+)
 
 from app.strategy import (
     generate_signal,
     detect_market_regime
 )
 
-from app.storage import save_trade
+from app.storage import (
+    save_trade
+)
 
 from app.logger import log
 
@@ -26,6 +31,23 @@ from app.portfolio import (
     open_position,
     update_positions
 )
+
+# =========================
+# SAFE FLOAT
+# =========================
+def safe_float(value):
+
+    try:
+
+        if isinstance(value, pd.Series):
+
+            return float(value.iloc[0])
+
+        return float(value)
+
+    except:
+
+        return 0
 
 # =========================
 # TELEGRAM
@@ -65,7 +87,9 @@ def send_telegram(msg):
 
     except Exception as e:
 
-        print(e)
+        print(
+            f"TELEGRAM ERROR: {e}"
+        )
 
 # =========================
 # MAIN ENGINE
@@ -82,22 +106,24 @@ def run():
     candidates = []
 
     # =========================
-    # SCAN ALL STOCKS
+    # SCAN STOCKS
     # =========================
     for stock in STOCKS:
 
         try:
 
             # =========================
-            # DOWNLOAD DATA
+            # DOWNLOAD MARKET DATA
             # =========================
             df = yf.download(
 
                 stock,
 
-                period="5d",
+                period="3mo",
 
-                interval="1h",
+                interval="1d",
+
+                auto_adjust=True,
 
                 progress=False
             )
@@ -107,19 +133,28 @@ def run():
             # =========================
             if df is None:
 
-                log(f"SKIP {stock}")
+                log(
+                    f"{stock} "
+                    f"NO DATA"
+                )
 
                 continue
 
             if df.empty:
 
-                log(f"EMPTY {stock}")
+                log(
+                    f"{stock} "
+                    f"EMPTY"
+                )
 
                 continue
 
-            if len(df) < 20:
+            if len(df) < 30:
 
-                log(f"NOT ENOUGH DATA {stock}")
+                log(
+                    f"{stock} "
+                    f"NOT ENOUGH DATA"
+                )
 
                 continue
 
@@ -127,6 +162,15 @@ def run():
             # APPLY INDICATORS
             # =========================
             df = apply_indicators(df)
+
+            if df.empty:
+
+                log(
+                    f"{stock} "
+                    f"INDICATOR EMPTY"
+                )
+
+                continue
 
             # =========================
             # SIGNAL ENGINE
@@ -141,35 +185,32 @@ def run():
             regime = detect_market_regime(df)
 
             # =========================
-            # FIX FLOAT
+            # SAFE PRICE
             # =========================
-            try:
+            if price <= 0:
 
-                price = float(price)
+                last = df.iloc[-1]
 
-            except:
-
-                close = df["Close"]
-
-                if len(close.shape) > 1:
-
-                    price = float(
-                        close.iloc[-1, 0]
-                    )
-
-                else:
-
-                    price = float(
-                        close.iloc[-1]
-                    )
+                price = safe_float(
+                    last["Close"]
+                )
 
             # =========================
-            # SAVE PRICE
+            # FINAL VALIDATION
             # =========================
+            if price <= 0:
+
+                log(
+                    f"{stock} "
+                    f"INVALID PRICE"
+                )
+
+                continue
+
             latest_prices[stock] = price
 
             # =========================
-            # SAVE SIGNAL
+            # SAVE TRADE
             # =========================
             trade_data = {
 
@@ -186,7 +227,7 @@ def run():
                     signal,
 
                 "price":
-                    round(price, 0),
+                    round(price, 2),
 
                 "confidence":
                     confidence,
@@ -201,7 +242,7 @@ def run():
             )
 
             # =========================
-            # LOG SIGNAL
+            # LOG
             # =========================
             log(
 
@@ -209,7 +250,7 @@ def run():
 
                 f"{signal} "
 
-                f"@ {price:.0f} "
+                f"@ {price:.2f} "
 
                 f"| Confidence "
 
@@ -219,29 +260,36 @@ def run():
             )
 
             # =========================
-            # STORE CANDIDATE
+            # CANDIDATES
             # =========================
-            if signal in ["BUY", "SELL"]:
+            if (
 
-                if confidence >= MIN_CONFIDENCE:
+                signal in
+                ["BUY", "SELL"]
 
-                    candidates.append({
+                and
 
-                        "stock":
-                            stock,
+                confidence >=
+                MIN_CONFIDENCE
+            ):
 
-                        "signal":
-                            signal,
+                candidates.append({
 
-                        "price":
-                            price,
+                    "stock":
+                        stock,
 
-                        "confidence":
-                            confidence,
+                    "signal":
+                        signal,
 
-                        "regime":
-                            regime
-                    })
+                    "price":
+                        price,
+
+                    "confidence":
+                        confidence,
+
+                    "regime":
+                        regime
+                })
 
         except Exception as e:
 
@@ -251,13 +299,14 @@ def run():
             )
 
     # =========================
-    # AI TRADE RANKING
+    # AI RANKING
     # =========================
     ranked = sorted(
 
         candidates,
 
-        key=lambda x: x["confidence"],
+        key=lambda x:
+            x["confidence"],
 
         reverse=True
     )
@@ -265,7 +314,9 @@ def run():
     # =========================
     # TOP AI TRADES
     # =========================
-    top_trades = ranked[:MAX_TOP_TRADES]
+    top_trades = ranked[
+        :MAX_TOP_TRADES
+    ]
 
     # =========================
     # EXECUTE
@@ -280,7 +331,9 @@ def run():
 
             price = trade["price"]
 
-            confidence = trade["confidence"]
+            confidence = (
+                trade["confidence"]
+            )
 
             regime = trade["regime"]
 
@@ -297,7 +350,7 @@ def run():
             )
 
             # =========================
-            # TELEGRAM MESSAGE
+            # TELEGRAM
             # =========================
             msg = (
 
@@ -305,9 +358,10 @@ def run():
 
                 f"{stock}\n"
 
-                f"{signal} @ {price:.0f}\n\n"
+                f"{signal} "
+                f"@ {price:.2f}\n\n"
 
-                f"🧠 Confidence: "
+                f"🧠 Neural Score: "
                 f"{confidence}%\n"
 
                 f"📈 Regime: "
@@ -316,9 +370,6 @@ def run():
 
             send_telegram(msg)
 
-            # =========================
-            # LOG
-            # =========================
             log(msg)
 
         except Exception as e:
@@ -343,7 +394,7 @@ def run():
         )
 
 # =========================
-# RUN DIRECT
+# RUN
 # =========================
 if __name__ == "__main__":
 
