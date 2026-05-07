@@ -1,59 +1,109 @@
+import pandas as pd
+
 # =========================
-# SAFE EXTRACT
+# MARKET REGIME DETECTOR
 # =========================
-def safe_float(x, default=0.0):
+def detect_market_regime(df):
+
     try:
-        # kalau Series → ambil terakhir
-        if hasattr(x, "iloc"):
-            return float(x.iloc[-1])
-        # kalau numpy scalar
-        if hasattr(x, "item"):
-            return float(x.item())
-        return float(x)
-    except:
-        return default
 
+        close = df["Close"]
+
+        # =========================
+        # HANDLE DATAFRAME
+        # =========================
+        if isinstance(close, pd.DataFrame):
+
+            close = close.iloc[:, 0]
+
+        # =========================
+        # EMA
+        # =========================
+        ema_fast = close.ewm(span=20).mean()
+
+        ema_slow = close.ewm(span=50).mean()
+
+        # =========================
+        # VOLATILITY
+        # =========================
+        volatility = close.pct_change().std() * 100
+
+        # =========================
+        # TRENDING
+        # =========================
+        if ema_fast.iloc[-1] > ema_slow.iloc[-1]:
+
+            if volatility < 1.5:
+                return "TRENDING"
+
+            return "VOLATILE"
+
+        # =========================
+        # PANIC
+        # =========================
+        drop = (
+            close.iloc[-1] -
+            close.iloc[-5]
+        ) / close.iloc[-5]
+
+        if drop < -0.03:
+
+            return "PANIC"
+
+        return "SIDEWAYS"
+
+    except:
+
+        return "UNKNOWN"
 
 # =========================
-# STRATEGY ENGINE (ANTI ERROR)
+# GENERATE SIGNAL
 # =========================
 def generate_signal(df):
+
     if df is None or df.empty:
+
         return "HOLD", 0
 
     try:
-        # =========================
-        # AMBIL BARIS TERAKHIR
-        # =========================
-        last = df.iloc[-1]
+
+        close = df["Close"]
+
+        # dataframe fix
+        if isinstance(close, pd.DataFrame):
+
+            close = close.iloc[:, 0]
+
+        price = float(close.iloc[-1])
+
+        regime = detect_market_regime(df)
 
         # =========================
-        # SAFE VALUE (ANTI SERIES 🔥)
+        # TRENDING
         # =========================
-        price = safe_float(last["Close"])
-        ema_fast = safe_float(last.get("ema_10"))
-        ema_slow = safe_float(last.get("ema_50"))
-        rsi = safe_float(last.get("rsi"), 50)
+        if regime == "TRENDING":
 
-        if price == 0:
-            return "HOLD", 0
+            return "BUY", price
 
-    except Exception as e:
-        print("❌ ERROR parsing strategy:", e)
+        # =========================
+        # VOLATILE
+        # =========================
+        if regime == "VOLATILE":
+
+            return "HOLD", price
+
+        # =========================
+        # PANIC
+        # =========================
+        if regime == "PANIC":
+
+            return "SELL", price
+
+        # =========================
+        # SIDEWAYS
+        # =========================
+        return "HOLD", price
+
+    except:
+
         return "HOLD", 0
-
-    # =========================
-    # 🔥 FORCE TRADE (TEST)
-    # =========================
-    return "BUY", price
-
-    # =========================
-    # 🔽 NANTI AKTIFKAN AI
-    # =========================
-    """
-    if ema_fast > ema_slow and rsi < 45:
-        return "BUY", price
-    elif ema_fast < ema_slow and rsi > 55:
-        return "SELL", price
-    return "HOLD", price
-    """
