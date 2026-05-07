@@ -6,7 +6,9 @@ from app.config import (
     STOCKS,
     DATA_PATH,
     TELEGRAM_TOKEN,
-    TELEGRAM_CHAT_ID
+    TELEGRAM_CHAT_ID,
+    MAX_TOP_TRADES,
+    MIN_CONFIDENCE
 )
 
 from app.indicators import apply_indicators
@@ -46,20 +48,27 @@ def send_telegram(msg):
         )
 
         requests.post(
+
             url,
+
             data={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "text": msg
+
+                "chat_id":
+                    TELEGRAM_CHAT_ID,
+
+                "text":
+                    msg
             },
+
             timeout=10
         )
 
-    except:
+    except Exception as e:
 
-        pass
+        print(e)
 
 # =========================
-# MAIN SCANNER
+# MAIN ENGINE
 # =========================
 def run():
 
@@ -79,22 +88,38 @@ def run():
 
         try:
 
+            # =========================
+            # DOWNLOAD DATA
+            # =========================
             df = yf.download(
+
                 stock,
+
                 period="5d",
+
                 interval="1h",
+
                 progress=False
             )
 
+            # =========================
+            # VALIDATION
+            # =========================
             if df is None:
+
+                log(f"SKIP {stock}")
 
                 continue
 
             if df.empty:
 
+                log(f"EMPTY {stock}")
+
                 continue
 
             if len(df) < 20:
+
+                log(f"NOT ENOUGH DATA {stock}")
 
                 continue
 
@@ -104,19 +129,19 @@ def run():
             df = apply_indicators(df)
 
             # =========================
-            # SIGNAL
+            # SIGNAL ENGINE
             # =========================
             signal, price, confidence = (
                 generate_signal(df)
             )
 
             # =========================
-            # REGIME
+            # MARKET REGIME
             # =========================
             regime = detect_market_regime(df)
 
             # =========================
-            # FLOAT FIX
+            # FIX FLOAT
             # =========================
             try:
 
@@ -138,6 +163,9 @@ def run():
                         close.iloc[-1]
                     )
 
+            # =========================
+            # SAVE PRICE
+            # =========================
             latest_prices[stock] = price
 
             # =========================
@@ -151,15 +179,20 @@ def run():
                         "%Y-%m-%d %H:%M:%S"
                     ),
 
-                "stock": stock,
+                "stock":
+                    stock,
 
-                "signal": signal,
+                "signal":
+                    signal,
 
-                "price": round(price, 0),
+                "price":
+                    round(price, 0),
 
-                "confidence": confidence,
+                "confidence":
+                    confidence,
 
-                "regime": regime
+                "regime":
+                    regime
             }
 
             save_trade(
@@ -168,28 +201,53 @@ def run():
             )
 
             # =========================
+            # LOG SIGNAL
+            # =========================
+            log(
+
+                f"{stock} "
+
+                f"{signal} "
+
+                f"@ {price:.0f} "
+
+                f"| Confidence "
+
+                f"{confidence}% "
+
+                f"| {regime}"
+            )
+
+            # =========================
             # STORE CANDIDATE
             # =========================
             if signal in ["BUY", "SELL"]:
 
-                candidates.append({
+                if confidence >= MIN_CONFIDENCE:
 
-                    "stock": stock,
+                    candidates.append({
 
-                    "signal": signal,
+                        "stock":
+                            stock,
 
-                    "price": price,
+                        "signal":
+                            signal,
 
-                    "confidence": confidence,
+                        "price":
+                            price,
 
-                    "regime": regime
-                })
+                        "confidence":
+                            confidence,
+
+                        "regime":
+                            regime
+                    })
 
         except Exception as e:
 
             log(
-                f"❌ ERROR "
-                f"{stock}: {e}"
+                f"❌ ERROR: "
+                f"{stock} {e}"
             )
 
     # =========================
@@ -205,12 +263,12 @@ def run():
     )
 
     # =========================
-    # TAKE TOP 2 ONLY
+    # TOP AI TRADES
     # =========================
-    top_trades = ranked[:2]
+    top_trades = ranked[:MAX_TOP_TRADES]
 
     # =========================
-    # EXECUTE BEST TRADES
+    # EXECUTE
     # =========================
     for trade in top_trades:
 
@@ -238,12 +296,16 @@ def run():
                 entry=price
             )
 
+            # =========================
+            # TELEGRAM MESSAGE
+            # =========================
             msg = (
+
                 f"🔥 TOP AI TRADE\n\n"
 
                 f"{stock}\n"
 
-                f"{signal} @ {price:.0f}\n"
+                f"{signal} @ {price:.0f}\n\n"
 
                 f"🧠 Confidence: "
                 f"{confidence}%\n"
@@ -254,6 +316,9 @@ def run():
 
             send_telegram(msg)
 
+            # =========================
+            # LOG
+            # =========================
             log(msg)
 
         except Exception as e:
