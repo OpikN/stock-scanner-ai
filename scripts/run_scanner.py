@@ -6,6 +6,7 @@ from app.config import STOCKS
 from app.indicators import apply_indicators
 from app.strategy import generate_signal
 from app.portfolio import open_position, update_positions
+from app.scanner import run
 
 
 # =========================
