@@ -49,7 +49,7 @@ def get_data(stock):
 
             period="3mo",
 
-            interval="1d",
+            interval="5m",
 
             auto_adjust=True,
 
