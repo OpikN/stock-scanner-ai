@@ -1,40 +1,40 @@
-import os
 import json
-import pandas as pd
+import os
+
 import yfinance as yf
 
-from app.strategy import generate_signal
-
-from app.portfolio import (
-    open_position,
-    update_positions,
-    get_open_positions,
-    calculate_equity
+from app.strategy import (
+    generate_signal
 )
 
 from app.telegram_reports import (
-    send_market_update,
-    send_position_summary
+    send_market_update
 )
 
 WATCHLIST = [
+
     "BBCA.JK",
+
     "BBRI.JK",
+
     "TLKM.JK"
+
 ]
 
 
 def run():
 
     print(
-        "[LOG] 🚀 SCANNER START (TRADE RANKING AI)"
+        "[SCANNER START]"
     )
 
-    market_regime = "TRENDING"
+    positions = []
 
-    # =========================
-    # PROCESS STOCKS
-    # =========================
+    floating_pnl = 0
+
+    market_regime = (
+        "TRENDING"
+    )
 
     for stock in WATCHLIST:
 
@@ -54,119 +54,28 @@ def run():
 
             if data.empty:
 
-                print(
-                    f"[LOG] EMPTY DATA: {stock}"
-                )
-
                 continue
 
-            close_data = data["Close"]
+            close_price = float(
 
-            # FIX DATAFRAME / SERIES
-            if hasattr(close_data, "columns"):
+                data["Close"].iloc[-1]
 
-                close_price = float(
-                    close_data.iloc[-1, 0]
-                )
+            )
 
-            else:
-
-                close_price = float(
-                    close_data.iloc[-1]
-                )
-
-            signal_data = generate_signal(
+            result = generate_signal(
                 data
             )
 
-            signal = signal_data["signal"]
+            signal = result[
+                "signal"
+            ]
 
-            confidence = signal_data["confidence"]
-
-            # =========================
-            # UPDATE EXISTING POSITIONS
-            # =========================
-
-            update_positions(
-                stock,
-                close_price
-            )
+            confidence = result[
+                "confidence"
+            ]
 
             # =========================
-            # OPEN NEW POSITION
-            # =========================
-
-            if signal in ["BUY", "SELL"]:
-
-                print(
-
-                    f"[OPENING POSITION] "
-                    f"{stock} "
-                    f"{signal}"
-
-                )
-
-                open_position(
-
-                    stock,
-
-                    signal,
-
-                    close_price,
-
-                    round(
-
-                        close_price * 1.01,
-
-                        2
-
-                    ) if signal == "SELL" else round(
-
-                        close_price * 0.99,
-
-                        2
-
-                    ),
-
-                    round(
-
-                        close_price * 0.98,
-
-                        2
-
-                    ) if signal == "SELL" else round(
-
-                        close_price * 1.02,
-
-                        2
-
-                    ),
-
-                    round(
-
-                        close_price * 0.96,
-
-                        2
-
-                    ) if signal == "SELL" else round(
-
-                        close_price * 1.04,
-
-                        2
-
-                    )
-
-                )
-
-                print(
-
-                    f"[POSITION SAVED] "
-                    f"{stock}"
-
-                )
-
-            # =========================
-            # TELEGRAM MARKET UPDATE
+            # TELEGRAM
             # =========================
 
             send_market_update(
@@ -183,83 +92,67 @@ def run():
 
             )
 
+            # =========================
+            # SAVE POSITION
+            # =========================
+
+            if signal in [
+
+                "BUY",
+
+                "SELL"
+
+            ]:
+
+                positions.append({
+
+                    "stock": stock,
+
+                    "side": signal,
+
+                    "entry_price": round(
+                        close_price,
+                        2
+                    ),
+
+                    "current_price": round(
+                        close_price,
+                        2
+                    ),
+
+                    "pnl": 0,
+
+                    "sl": round(
+                        close_price * 0.99,
+                        2
+                    ),
+
+                    "tp1": round(
+                        close_price * 1.02,
+                        2
+                    )
+
+                })
+
         except Exception as e:
 
             print(
-                f"[LOG] ERROR {stock}: {e}"
+                f"ERROR {stock}: {e}"
             )
 
     # =========================
-    # LOAD POSITIONS
+    # LIVE JSON
     # =========================
 
-    open_positions = get_open_positions()
+    live_data = {
 
-    # =========================
-    # CALCULATE EQUITY
-    # =========================
-
-    account_data = calculate_equity()
-
-    live_equity = account_data["live_equity"]
-
-    floating_pnl = account_data["floating_pnl"]
-
-    # =========================
-    # LIVE DASHBOARD JSON
-    # =========================
-
-    positions_data = []
-
-    if not open_positions.empty:
-
-        for _, row in open_positions.iterrows():
-
-            positions_data.append({
-
-                "stock": row["stock"],
-
-                "side": row["side"],
-
-                "entry": float(
-                    row["entry_price"]
-                ),
-
-                "current": float(
-                    row["current_price"]
-                ),
-
-                "pnl": float(
-                    row["pnl"]
-                ),
-
-                "sl": float(
-                    row["sl"]
-                ),
-
-                "tp1": float(
-                    row["tp1"]
-                ),
-
-                "tp2": float(
-                    row["tp2"]
-                )
-
-            })
-
-    live_dashboard = {
-
-        "equity": live_equity,
+        "equity": 100000000,
 
         "floating_pnl": floating_pnl,
 
-        "open_positions": len(
-            open_positions
-        ),
+        "open_positions": positions,
 
-        "market_regime": market_regime,
-
-        "positions": positions_data
+        "market_regime": market_regime
 
     }
 
@@ -278,7 +171,7 @@ def run():
 
         json.dump(
 
-            live_dashboard,
+            live_data,
 
             f,
 
@@ -290,24 +183,8 @@ def run():
         "[LIVE JSON UPDATED]"
     )
 
-    # =========================
-    # TELEGRAM POSITION SUMMARY
-    # =========================
-
-    send_position_summary(
-
-        open_count=len(
-            open_positions
-        ),
-
-        floating_pnl=floating_pnl,
-
-        equity=live_equity
-
-    )
-
     print(
-        "[LOG] ✅ SCANNER FINISHED"
+        "[SCANNER FINISHED]"
     )
 
 
