@@ -1,0 +1,14 @@
+{
+  "equity": 100021000,
+  "floating_pnl": 21000,
+  "open_positions": 6,
+  "positions": [
+    {
+      "stock": "BBRI.JK",
+      "side": "SELL",
+      "entry": 3310,
+      "current": 3260,
+      "pnl": 50000
+    }
+  ]
+}
