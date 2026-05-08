@@ -5,7 +5,7 @@ def generate_signal(df):
 
     try:
 
-        close = df["Close"]
+        close = df["Close"].squeeze()
 
         # =========================
         # EMA
