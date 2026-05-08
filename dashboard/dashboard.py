@@ -5,10 +5,10 @@ import os
 
 from app.config import (
     DASHBOARD_TITLE,
-    STRATEGY_PATH
+    STRATEGY_PATH,
+    POSITIONS_PATH,
+    INITIAL_BALANCE
 )
-
-import app.portfolio as portfolio
 
 # =========================
 # PAGE CONFIG
@@ -23,17 +23,87 @@ st.set_page_config(
 # TITLE
 # =========================
 
-st.title(DASHBOARD_TITLE)
+st.title(
+    DASHBOARD_TITLE
+)
 
 # =========================
-# LOAD DATA
+# LOAD CSV DIRECT
 # =========================
 
-positions = portfolio.load_positions()
+try:
 
-open_positions = portfolio.get_open_positions()
+    positions = pd.read_csv(
+        POSITIONS_PATH
+    )
 
-closed_positions = portfolio.get_closed_positions()
+except Exception:
+
+    positions = pd.DataFrame()
+
+# =========================
+# SAFE FILTERS
+# =========================
+
+if positions.empty:
+
+    open_positions = pd.DataFrame()
+
+    closed_positions = pd.DataFrame()
+
+else:
+
+    try:
+
+        open_positions = positions[
+            positions["status"] == "OPEN"
+        ]
+
+    except Exception:
+
+        open_positions = pd.DataFrame()
+
+    try:
+
+        closed_positions = positions[
+            positions["status"] == "CLOSED"
+        ]
+
+    except Exception:
+
+        closed_positions = pd.DataFrame()
+
+# =========================
+# EQUITY
+# =========================
+
+try:
+
+    closed_pnl = closed_positions[
+        "pnl"
+    ].sum()
+
+except Exception:
+
+    closed_pnl = 0
+
+try:
+
+    floating_pnl = open_positions[
+        "pnl"
+    ].sum()
+
+except Exception:
+
+    floating_pnl = 0
+
+closed_equity = (
+    INITIAL_BALANCE + closed_pnl
+)
+
+live_equity = (
+    closed_equity + floating_pnl
+)
 
 # =========================
 # DEBUG
@@ -47,15 +117,11 @@ st.write(
 # ACCOUNT
 # =========================
 
-st.header("💰 Account")
+st.header(
+    "💰 Account"
+)
 
 col1, col2, col3 = st.columns(3)
-
-closed_equity = portfolio.get_closed_equity()
-
-live_equity = portfolio.get_live_equity()
-
-floating = live_equity - closed_equity
 
 with col1:
 
@@ -75,93 +141,61 @@ with col3:
 
     st.metric(
         "Floating PnL",
-        f"{floating:,.0f}"
+        f"{floating_pnl:,.0f}"
     )
 
 # =========================
 # AI MODE
 # =========================
 
-st.header("🧠 AI Mode")
+st.header(
+    "🧠 AI Mode"
+)
 
-st.write("Mode: AGGRESSIVE")
+st.write(
+    "Mode: AGGRESSIVE"
+)
 
-st.write("Market Regime: TRENDING")
+st.write(
+    "Market Regime: TRENDING"
+)
 
 # =========================
 # STRATEGY
 # =========================
 
-st.header("🧠 AI Strategy")
-
-if os.path.exists(STRATEGY_PATH):
-
-    with open(
-        STRATEGY_PATH,
-        "r"
-    ) as f:
-
-        strategy = json.load(f)
-
-    st.json(strategy)
-
-else:
-
-    st.warning(
-        "Strategy file not found"
-    )
-
-# =========================
-# BRAIN STATUS
-# =========================
-
-st.header("🧠 AI Brain Status")
-
-st.write(
-    "Last Optimizer Run: Active"
+st.header(
+    "🧠 AI Strategy"
 )
 
-# =========================
-# RAW CSV
-# =========================
+if os.path.exists(
+    STRATEGY_PATH
+):
 
-st.header("🛠 RAW CSV DATA")
+    try:
 
-if positions.empty:
+        with open(
+            STRATEGY_PATH,
+            "r"
+        ) as f:
 
-    st.warning(
-        "DATAFRAME KOSONG"
-    )
+            strategy = json.load(f)
 
-else:
+        st.json(strategy)
 
-    st.dataframe(
-        positions
-    )
+    except Exception as e:
 
-# =========================
-# ALL POSITIONS
-# =========================
-
-st.header("📂 All Positions")
-
-if positions.empty:
-
-    st.info(
-        "Tidak ada posisi"
-    )
-
-else:
-
-    st.dataframe(
-        positions
-    )
+        st.error(
+            f"STRATEGY ERROR: {e}"
+        )
 
 # =========================
 # OPEN POSITIONS
 # =========================
 
-st.header("📡 Open Positions")
+st.header(
+    "📡 Open Positions"
+)
 
 st.write(
     f"OPEN ROWS: `{len(open_positions)}`"
@@ -183,26 +217,38 @@ else:
 # CLOSED PNL
 # =========================
 
-st.header("📈 Closed PnL")
+st.header(
+    "📈 Closed PnL"
+)
 
-if closed_positions.empty:
+st.success(
+    f"TOTAL CLOSED PNL: {closed_pnl:,.0f}"
+)
+
+if not closed_positions.empty:
+
+    st.dataframe(
+        closed_positions
+    )
+
+# =========================
+# RAW CSV
+# =========================
+
+st.header(
+    "🛠 RAW CSV DATA"
+)
+
+if positions.empty:
 
     st.warning(
-        "Belum ada CLOSED"
+        "DATAFRAME KOSONG"
     )
 
 else:
 
-    total_closed = closed_positions[
-        "pnl"
-    ].sum()
-
-    st.success(
-        f"TOTAL CLOSED PNL: {total_closed:,.0f}"
-    )
-
     st.dataframe(
-        closed_positions
+        positions
     )
 
 # =========================
