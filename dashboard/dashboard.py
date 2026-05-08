@@ -1,4 +1,9 @@
 import streamlit as st
+
+from streamlit_autorefresh import (
+    st_autorefresh
+)
+
 import pandas as pd
 import json
 import os
@@ -20,6 +25,17 @@ st.set_page_config(
 )
 
 # =========================
+# AUTO REFRESH
+# =========================
+
+st_autorefresh(
+
+    interval=5000,
+
+    key="live_dashboard"
+)
+
+# =========================
 # TITLE
 # =========================
 
@@ -28,7 +44,7 @@ st.title(
 )
 
 # =========================
-# LOAD CSV DIRECT
+# LOAD CSV
 # =========================
 
 try:
@@ -42,7 +58,7 @@ except Exception:
     positions = pd.DataFrame()
 
 # =========================
-# SAFE FILTERS
+# OPEN / CLOSED POSITIONS
 # =========================
 
 if positions.empty:
@@ -74,7 +90,7 @@ else:
         closed_positions = pd.DataFrame()
 
 # =========================
-# EQUITY
+# CALCULATE PNL
 # =========================
 
 try:
