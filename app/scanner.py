@@ -222,15 +222,15 @@ def run():
                 "side": row["side"],
 
                 "entry": float(
-                    row["entry"]
+                    row["entry_price"]
                 ),
 
                 "current": float(
-                    row["current"]
+                    row["current_price"]"]
                 ),
 
                 "pnl": float(
-                    row["floating_pnl"]
+                    row["pnl"]
                 ),
 
                 "sl": float(
