@@ -1,130 +1,76 @@
 import yfinance as yf
 import pandas as pd
-import time
 
 from app.config import (
     STOCKS,
-    MIN_CONFIDENCE
-)
-
-from app.indicators import (
-    apply_indicators
+    MIN_CONFIDENCE,
+    TP1_PERCENT,
+    TP2_PERCENT,
+    SL_PERCENT
 )
 
 from app.strategy import (
-    generate_signal,
-    detect_market_regime
+    generate_signal
 )
 
 from app.portfolio import (
     open_position,
-    update_positions
-)
-
-from app.telegram import (
-    send_telegram
+    load_positions,
+    get_live_equity
 )
 
 from app.telegram_reports import (
-    send_high_confidence_alert
+    send_market_update,
+    send_new_position
 )
 
-# =========================
-# LOGGER
-# =========================
-def log(message):
 
-    print(f"[LOG] {message}")
-
-# =========================
-# DOWNLOAD MARKET DATA
-# =========================
-def get_data(stock):
-
-    try:
-
-        df = yf.download(
-
-            stock,
-
-            period="60d",
-
-            interval="5m",
-
-            auto_adjust=True,
-
-            progress=False
-        )
-
-        if df.empty:
-
-            return pd.DataFrame()
-
-        df = apply_indicators(df)
-
-        return df
-
-    except Exception as e:
-
-        print(
-            f"DATA ERROR {stock}: {e}"
-        )
-
-        return pd.DataFrame()
-
-# =========================
-# MAIN SCANNER
-# =========================
 def run():
 
-    log(
-        "🚀 SCANNER START (TRADE RANKING AI)"
+    print(
+        "[LOG] 🚀 SCANNER START (TRADE RANKING AI)"
     )
 
-    send_telegram(
-        "🔥 AI Scanner Online"
-    )
+    positions = load_positions()
 
-    latest_prices = {}
-
-    # =========================
-    # LOOP STOCKS
-    # =========================
     for stock in STOCKS:
 
         try:
 
-            df = get_data(stock)
+            df = yf.download(
+
+                stock,
+
+                period="60d",
+
+                interval="5m",
+
+                progress=False
+            )
 
             if df.empty:
 
+                print(
+                    f"[LOG] EMPTY DATA {stock}"
+                )
+
                 continue
 
-            # =========================
-            # SIGNAL
-            # =========================
-            (
-                signal,
-                price,
-                confidence
-            ) = generate_signal(df)
+            signal_data = generate_signal(df)
 
-            # =========================
-            # MARKET REGIME
-            # =========================
-            regime = detect_market_regime(
-                df
+            signal = signal_data["signal"]
+
+            confidence = signal_data["confidence"]
+
+            regime = signal_data["regime"]
+
+            price = float(
+                df["Close"].iloc[-1]
             )
 
-            # =========================
-            # SAVE PRICE
-            # =========================
-            latest_prices[stock] = price
+            print(
 
-            # =========================
-            # LOG TERMINAL
-            # =========================
-            log(
+                f"[LOG] "
 
                 f"{stock} "
 
@@ -132,90 +78,136 @@ def run():
 
                 f"@ {price:.2f} "
 
-                f"| Confidence "
-
-                f"{confidence}% "
+                f"| Confidence {confidence}% "
 
                 f"| {regime}"
             )
 
-            # =========================
-            # TELEGRAM UPDATE
-            # =========================
-            send_telegram(
+            equity = get_live_equity()
 
-                f"🧠 MARKET UPDATE\n\n"
+            send_market_update(
 
-                f"{stock}\n\n"
+                stock=stock,
 
-                f"Signal: "
-                f"{signal}\n"
+                signal=signal,
 
-                f"Price: "
-                f"{price:.2f}\n"
+                price=price,
 
-                f"Confidence: "
-                f"{confidence}%\n"
+                confidence=confidence,
 
-                f"Regime: "
-                f"{regime}"
+                regime=regime,
+
+                equity=equity
             )
 
-            # =========================
-            # HIGH CONFIDENCE ALERT
-            # =========================
-            if confidence >= 80:
+            if confidence < MIN_CONFIDENCE:
 
-                send_high_confidence_alert(
+                continue
 
-                    stock=stock,
+            if signal not in ["BUY", "SELL"]:
 
-                    signal=signal,
+                continue
 
-                    confidence=confidence,
+            existing = positions[
 
-                    regime=regime,
-
-                    price=price
+                (
+                    positions["stock"] == stock
                 )
 
-            # =========================
-            # OPEN POSITION
-            # =========================
-            if (
+                &
 
-                signal in [
-                    "BUY",
-                    "SELL"
-                ]
-
-                and
-
-                confidence >= MIN_CONFIDENCE
-            ):
-
-                open_position(
-
-                    stock=stock,
-
-                    side=signal,
-
-                    entry=price
+                (
+                    positions["status"] == "OPEN"
                 )
+            ]
+
+            if not existing.empty:
+
+                continue
+
+            tp1 = (
+
+                price *
+                (
+                    1 + TP1_PERCENT
+                )
+
+                if signal == "BUY"
+
+                else
+
+                price *
+                (
+                    1 - TP1_PERCENT
+                )
+            )
+
+            tp2 = (
+
+                price *
+                (
+                    1 + TP2_PERCENT
+                )
+
+                if signal == "BUY"
+
+                else
+
+                price *
+                (
+                    1 - TP2_PERCENT
+                )
+            )
+
+            sl = (
+
+                price *
+                (
+                    1 - SL_PERCENT
+                )
+
+                if signal == "BUY"
+
+                else
+
+                price *
+                (
+                    1 + SL_PERCENT
+                )
+            )
+
+            open_position(
+
+                stock=stock,
+
+                side=signal,
+
+                entry=price
+            )
+
+            send_new_position(
+
+                stock=stock,
+
+                side=signal,
+
+                entry=price,
+
+                tp1=tp1,
+
+                tp2=tp2,
+
+                sl=sl,
+
+                equity=equity
+            )
 
         except Exception as e:
 
             print(
-                f"SCANNER ERROR {stock}: {e}"
+                f"[LOG] ERROR {stock}: {e}"
             )
 
-    # =========================
-    # UPDATE PORTFOLIO
-    # =========================
-    update_positions(
-        latest_prices
-    )
-
-    log(
-        "✅ SCANNER FINISHED"
+    print(
+        "[LOG] ✅ SCANNER FINISHED"
     )
