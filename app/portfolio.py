@@ -1,322 +1,313 @@
+import streamlit as st
 import pandas as pd
+import json
+import os
+import importlib
 
 from app.config import (
-    POSITIONS_PATH,
-    INITIAL_BALANCE
+    DASHBOARD_TITLE,
+    STRATEGY_PATH
 )
 
 # =========================
-# LOAD POSITIONS
+# FORCE RELOAD PORTFOLIO
 # =========================
 
-def load_positions():
+from app import portfolio
 
-    try:
-
-        df = pd.read_csv(
-            POSITIONS_PATH
-        )
-
-        return df
-
-    except Exception:
-
-        columns = [
-
-            "stock",
-            "side",
-            "entry",
-            "tp1",
-            "tp2",
-            "sl",
-            "status",
-            "pnl",
-            "partial_taken"
-        ]
-
-        return pd.DataFrame(
-            columns=columns
-        )
+importlib.reload(portfolio)
 
 # =========================
-# SAVE POSITIONS
+# PAGE CONFIG
 # =========================
 
-def save_positions(df):
-
-    try:
-
-        df.to_csv(
-            POSITIONS_PATH,
-            index=False
-        )
-
-    except Exception as e:
-
-        print(
-            f"SAVE ERROR: {e}"
-        )
+st.set_page_config(
+    page_title="AI Trading Terminal",
+    layout="wide"
+)
 
 # =========================
-# OPEN POSITION
+# TITLE
 # =========================
 
-def open_position(
+st.title(DASHBOARD_TITLE)
 
-    stock,
+# =========================
+# DEBUG MODULE
+# =========================
 
-    side,
+st.write("MODULE FUNCTIONS:")
 
-    entry,
+st.write(dir(portfolio))
 
-    tp1,
+# =========================
+# LOAD DATA SAFE
+# =========================
 
-    tp2,
+try:
 
-    sl
+    positions = portfolio.load_positions()
+
+except Exception as e:
+
+    st.error(
+        f"LOAD POSITIONS ERROR: {e}"
+    )
+
+    positions = pd.DataFrame()
+
+# =========================
+# OPEN POSITIONS SAFE
+# =========================
+
+try:
+
+    open_positions = portfolio.get_open_positions()
+
+except Exception as e:
+
+    st.error(
+        f"OPEN POSITIONS ERROR: {e}"
+    )
+
+    open_positions = pd.DataFrame()
+
+# =========================
+# CLOSED POSITIONS SAFE
+# =========================
+
+try:
+
+    closed_positions = portfolio.get_closed_positions()
+
+except Exception as e:
+
+    st.error(
+        f"CLOSED POSITIONS ERROR: {e}"
+    )
+
+    closed_positions = pd.DataFrame()
+
+# =========================
+# EQUITY SAFE
+# =========================
+
+try:
+
+    closed_equity = portfolio.get_closed_equity()
+
+except Exception:
+
+    closed_equity = 0
+
+try:
+
+    live_equity = portfolio.get_live_equity()
+
+except Exception:
+
+    live_equity = 0
+
+floating = live_equity - closed_equity
+
+# =========================
+# DEBUG ROWS
+# =========================
+
+st.write(
+    f"DEBUG ROWS: `{len(positions)}`"
+)
+
+# =========================
+# ACCOUNT
+# =========================
+
+st.header("💰 Account")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+
+    st.metric(
+        "Closed Equity",
+        f"{closed_equity:,.0f}"
+    )
+
+with col2:
+
+    st.metric(
+        "Live Equity",
+        f"{live_equity:,.0f}"
+    )
+
+with col3:
+
+    st.metric(
+        "Floating PnL",
+        f"{floating:,.0f}"
+    )
+
+# =========================
+# AI MODE
+# =========================
+
+st.header("🧠 AI Mode")
+
+st.write(
+    "Mode: AGGRESSIVE"
+)
+
+st.write(
+    "Market Regime: TRENDING"
+)
+
+# =========================
+# STRATEGY
+# =========================
+
+st.header("🧠 AI Strategy")
+
+if os.path.exists(
+    STRATEGY_PATH
 ):
 
     try:
 
-        positions = load_positions()
+        with open(
+            STRATEGY_PATH,
+            "r"
+        ) as f:
 
-        new_row = {
+            strategy = json.load(f)
 
-            "stock": stock,
-
-            "side": side,
-
-            "entry": entry,
-
-            "tp1": tp1,
-
-            "tp2": tp2,
-
-            "sl": sl,
-
-            "status": "OPEN",
-
-            "pnl": 0,
-
-            "partial_taken": False
-        }
-
-        positions = pd.concat(
-
-            [
-
-                positions,
-
-                pd.DataFrame([new_row])
-            ],
-
-            ignore_index=True
-        )
-
-        save_positions(
-            positions
-        )
+        st.json(strategy)
 
     except Exception as e:
 
-        print(
-            f"OPEN POSITION ERROR: {e}"
+        st.error(
+            f"STRATEGY ERROR: {e}"
         )
 
+else:
+
+    st.warning(
+        "Strategy file not found"
+    )
+
 # =========================
-# UPDATE POSITIONS
+# BRAIN STATUS
 # =========================
 
-def update_positions(
+st.header(
+    "🧠 AI Brain Status"
+)
 
-    stock,
+st.write(
+    "Last Optimizer Run: Active"
+)
 
-    current_price
-):
+# =========================
+# RAW CSV
+# =========================
+
+st.header(
+    "🛠 RAW CSV DATA"
+)
+
+if positions.empty:
+
+    st.warning(
+        "DATAFRAME KOSONG"
+    )
+
+else:
+
+    st.dataframe(
+        positions
+    )
+
+# =========================
+# ALL POSITIONS
+# =========================
+
+st.header(
+    "📂 All Positions"
+)
+
+if positions.empty:
+
+    st.info(
+        "Tidak ada posisi"
+    )
+
+else:
+
+    st.dataframe(
+        positions
+    )
+
+# =========================
+# OPEN POSITIONS
+# =========================
+
+st.header(
+    "📡 Open Positions"
+)
+
+st.write(
+    f"OPEN ROWS: `{len(open_positions)}`"
+)
+
+if open_positions.empty:
+
+    st.warning(
+        "Tidak ada posisi OPEN"
+    )
+
+else:
+
+    st.dataframe(
+        open_positions
+    )
+
+# =========================
+# CLOSED PNL
+# =========================
+
+st.header(
+    "📈 Closed PnL"
+)
+
+if closed_positions.empty:
+
+    st.warning(
+        "Belum ada CLOSED"
+    )
+
+else:
 
     try:
 
-        positions = load_positions()
-
-        if positions.empty:
-
-            return
-
-        for idx, row in positions.iterrows():
-
-            if row["status"] != "OPEN":
-
-                continue
-
-            if row["stock"] != stock:
-
-                continue
-
-            side = str(
-                row["side"]
-            )
-
-            entry = float(
-                row["entry"]
-            )
-
-            pnl = 0
-
-            # =========================
-            # BUY
-            # =========================
-
-            if side == "BUY":
-
-                pnl = (
-                    current_price - entry
-                ) * 100
-
-            # =========================
-            # SELL
-            # =========================
-
-            else:
-
-                pnl = (
-                    entry - current_price
-                ) * 100
-
-            positions.loc[
-                idx,
-                "pnl"
-            ] = pnl
-
-        save_positions(
-            positions
-        )
-
-    except Exception as e:
-
-        print(
-            f"UPDATE POSITION ERROR: {e}"
-        )
-
-# =========================
-# GET OPEN POSITIONS
-# =========================
-
-def get_open_positions():
-
-    try:
-
-        df = load_positions()
-
-        if df.empty:
-
-            return pd.DataFrame()
-
-        return df[
-            df["status"] == "OPEN"
-        ]
+        total_closed = closed_positions[
+            "pnl"
+        ].sum()
 
     except Exception:
 
-        return pd.DataFrame()
+        total_closed = 0
+
+    st.success(
+        f"TOTAL CLOSED PNL: {total_closed:,.0f}"
+    )
+
+    st.dataframe(
+        closed_positions
+    )
 
 # =========================
-# GET CLOSED POSITIONS
+# FOOTER
 # =========================
 
-def get_closed_positions():
-
-    try:
-
-        df = load_positions()
-
-        if df.empty:
-
-            return pd.DataFrame()
-
-        return df[
-            df["status"] == "CLOSED"
-        ]
-
-    except Exception:
-
-        return pd.DataFrame()
-
-# =========================
-# CLOSED EQUITY
-# =========================
-
-def get_closed_equity():
-
-    try:
-
-        closed = get_closed_positions()
-
-        if closed.empty:
-
-            return INITIAL_BALANCE
-
-        pnl = closed["pnl"].sum()
-
-        return INITIAL_BALANCE + pnl
-
-    except Exception:
-
-        return INITIAL_BALANCE
-
-# =========================
-# LIVE EQUITY
-# =========================
-
-def get_live_equity():
-
-    try:
-
-        open_df = get_open_positions()
-
-        closed_equity = get_closed_equity()
-
-        if open_df.empty:
-
-            return closed_equity
-
-        floating = open_df["pnl"].sum()
-
-        return closed_equity + floating
-
-    except Exception:
-
-        return INITIAL_BALANCE
-
-# =========================
-# BALANCE
-# =========================
-
-def get_balance():
-
-    try:
-
-        return get_closed_equity()
-
-    except Exception:
-
-        return INITIAL_BALANCE
-
-# =========================
-# TOTAL PNL
-# =========================
-
-def get_total_pnl():
-
-    try:
-
-        closed = get_closed_positions()
-
-        if closed.empty:
-
-            return 0
-
-        return closed["pnl"].sum()
-
-    except Exception:
-
-        return 0
+st.success(
+    "🔥 REAL MARKET REGIME AI ACTIVE"
+)
