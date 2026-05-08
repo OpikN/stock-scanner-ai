@@ -81,7 +81,7 @@ def run():
             # =========================
 
             price = float(
-            df["Close"].iloc[-1].squeeze()
+                df["Close"].iloc[-1].squeeze()
             )
 
             # =========================
@@ -124,7 +124,11 @@ def run():
 
                 f"Confidence: {confidence}%\n"
 
-                f"Regime: {regime}"
+                f"Regime: {regime}\n\n"
+
+                f"💰 Equity:\n"
+
+                f"100,000,000"
             )
 
             # =========================
@@ -240,6 +244,19 @@ def run():
             )
 
         # =========================
+        # DEBUG OPEN POSITION
+        # =========================
+
+        print(
+
+            f"[OPENING POSITION] "
+
+            f"{stock} "
+
+            f"{signal}"
+        )
+
+        # =========================
         # SAVE POSITION
         # =========================
 
@@ -256,6 +273,17 @@ def run():
             tp2=tp2,
 
             sl=sl
+        )
+
+        # =========================
+        # DEBUG POSITION SAVED
+        # =========================
+
+        print(
+
+            f"[POSITION SAVED] "
+
+            f"{stock}"
         )
 
         # =========================
@@ -276,7 +304,11 @@ def run():
 
             f"TP2: {tp2:.2f}\n"
 
-            f"SL: {sl:.2f}"
+            f"SL: {sl:.2f}\n\n"
+
+            f"💰 Equity:\n"
+
+            f"100,000,000"
         )
 
     print(
