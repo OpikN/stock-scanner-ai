@@ -52,6 +52,8 @@ jobs:
 
           pip install requests
 
+          pip install ta==0.11.0
+
       # =========================
       # RUN SCANNER
       # =========================
