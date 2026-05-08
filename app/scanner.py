@@ -226,7 +226,7 @@ def run():
                 ),
 
                 "current": float(
-                    row["current_price"]"]
+                    row["current_price"]
                 ),
 
                 "pnl": float(
