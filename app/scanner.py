@@ -56,26 +56,37 @@ def run():
 
                 continue
 
+            # =========================
+            # FIX CLOSE PRICE
+            # =========================
+
             close_data = data["Close"]
 
-if hasattr(
-    close_data,
-    "columns"
-):
+            if hasattr(
 
-    close_price = float(
+                close_data,
 
-        close_data.iloc[-1, 0]
+                "columns"
 
-    )
+            ):
 
-else:
+                close_price = float(
 
-    close_price = float(
+                    close_data.iloc[-1, 0]
 
-        close_data.iloc[-1]
+                )
 
-    )
+            else:
+
+                close_price = float(
+
+                    close_data.iloc[-1]
+
+                )
+
+            # =========================
+            # AI SIGNAL
+            # =========================
 
             result = generate_signal(
                 data
