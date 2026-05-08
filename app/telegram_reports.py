@@ -1,135 +1,111 @@
 from app.telegram import send_telegram
 
-from app.portfolio import (
-    get_live_equity,
-    load_positions
-)
 
-from app.analytics import (
-    total_trades,
-    winrate,
-    total_pnl,
-    best_stock,
-    worst_stock,
-    avg_pnl
-)
-
-# =========================
-# DAILY REPORT
-# =========================
-def send_daily_report():
-
-    df = load_positions()
-
-    floating = 0
-
-    open_positions = 0
-
-    if not df.empty:
-
-        floating = df[
-            df["status"] == "OPEN"
-        ]["pnl"].sum()
-
-        open_positions = len(
-            df[
-                df["status"] == "OPEN"
-            ]
-        )
-
-    send_telegram(
-
-        f"📊 DAILY AI REPORT\n\n"
-
-        f"💰 Equity:\n"
-        f"{get_live_equity():,.0f}\n\n"
-
-        f"📈 Floating PnL:\n"
-        f"{floating:,.0f}\n\n"
-
-        f"📊 Closed PnL:\n"
-        f"{total_pnl():,.0f}\n\n"
-
-        f"🧠 Total Trades:\n"
-        f"{total_trades()}\n\n"
-
-        f"🏆 Winrate:\n"
-        f"{winrate()}%\n\n"
-
-        f"📡 Open Positions:\n"
-        f"{open_positions}\n\n"
-
-        f"🔥 Best Stock:\n"
-        f"{best_stock()}\n\n"
-
-        f"⚠️ Worst Stock:\n"
-        f"{worst_stock()}\n\n"
-
-        f"📈 Average PnL:\n"
-        f"{avg_pnl():,.0f}"
-    )
-
-# =========================
-# HIGH CONFIDENCE ALERT
-# =========================
-def send_high_confidence_alert(
+def send_market_update(
     stock,
     signal,
+    price,
     confidence,
     regime,
-    price
+    equity
 ):
 
     send_telegram(
 
-        f"🚨 HIGH CONFIDENCE SETUP\n\n"
+        f"🧠 MARKET UPDATE\n\n"
 
         f"{stock}\n\n"
 
-        f"Signal:\n"
-        f"{signal}\n\n"
+        f"Signal: {signal}\n"
 
-        f"Price:\n"
-        f"{price:.2f}\n\n"
+        f"Price: {price:.2f}\n"
 
-        f"Confidence:\n"
-        f"{confidence}%\n\n"
+        f"Confidence: {confidence}%\n"
 
-        f"Regime:\n"
-        f"{regime}"
+        f"Regime: {regime}\n\n"
+
+        f"💰 Equity:\n"
+
+        f"{equity:,.0f}"
     )
 
-# =========================
-# REGIME CHANGE
-# =========================
-def send_regime_change(
-    old_regime,
-    new_regime
+
+def send_new_position(
+    stock,
+    side,
+    entry,
+    tp1,
+    tp2,
+    sl,
+    equity
 ):
 
     send_telegram(
 
-        f"🧠 MARKET REGIME CHANGE\n\n"
+        f"🚀 NEW POSITION\n\n"
 
-        f"{old_regime}\n"
-        f"→ {new_regime}\n\n"
+        f"{stock}\n"
 
-        f"AI updated strategy mode"
+        f"{side}\n\n"
+
+        f"Entry: {entry:.2f}\n\n"
+
+        f"TP1: {tp1:.2f}\n"
+
+        f"TP2: {tp2:.2f}\n\n"
+
+        f"SL: {sl:.2f}\n\n"
+
+        f"💰 Equity: {equity:,.0f}"
     )
 
-# =========================
-# DRAWDOWN WARNING
-# =========================
-def send_drawdown_warning(
-    drawdown
+
+def send_trailing_update(
+    stock,
+    new_sl
 ):
 
     send_telegram(
 
-        f"⚠️ DRAWDOWN WARNING\n\n"
+        f"📈 TRAILING UPDATE\n\n"
 
-        f"Floating Loss:\n"
-        f"{drawdown:,.0f}\n\n"
+        f"{stock}\n\n"
 
-        f"AI switched to SAFE mode"
+        f"New SL: {new_sl:.2f}"
+    )
+
+
+def send_partial_close(
+    stock,
+    pnl
+):
+
+    send_telegram(
+
+        f"💰 PARTIAL CLOSE\n\n"
+
+        f"{stock}\n\n"
+
+        f"PnL: {pnl:,.0f}"
+    )
+
+
+def send_position_closed(
+    stock,
+    reason,
+    pnl,
+    equity
+):
+
+    send_telegram(
+
+        f"🔥 POSITION CLOSED\n\n"
+
+        f"{stock}\n\n"
+
+        f"{reason}\n\n"
+
+        f"PnL: {pnl:,.0f}\n\n"
+
+        f"💰 Equity: {equity:,.0f}"
     )
