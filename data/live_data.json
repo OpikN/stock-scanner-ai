@@ -1,14 +1,88 @@
 {
-  "equity": 100021000,
-  "floating_pnl": 21000,
-  "open_positions": 6,
-  "positions": [
-    {
-      "stock": "BBRI.JK",
-      "side": "SELL",
-      "entry": 3310,
-      "current": 3260,
-      "pnl": 50000
-    }
-  ]
+    "equity": 100000000.0,
+    "floating_pnl": 0.0,
+    "open_positions": 8,
+    "market_regime": "TRENDING",
+    "positions": [
+        {
+            "stock": "BBRI.JK",
+            "side": "SELL",
+            "entry": NaN,
+            "current": 3260.0,
+            "pnl": NaN,
+            "sl": 3343.1,
+            "tp1": 3243.8,
+            "tp2": 3177.6
+        },
+        {
+            "stock": "BBRI.JK",
+            "side": "SELL",
+            "entry": NaN,
+            "current": 3260.0,
+            "pnl": NaN,
+            "sl": 3343.1,
+            "tp1": 3243.8,
+            "tp2": 3177.6
+        },
+        {
+            "stock": "BBRI.JK",
+            "side": "SELL",
+            "entry": NaN,
+            "current": 3260.0,
+            "pnl": NaN,
+            "sl": 3343.1,
+            "tp1": 3243.8,
+            "tp2": 3177.6
+        },
+        {
+            "stock": "BBRI.JK",
+            "side": "SELL",
+            "entry": NaN,
+            "current": 3260.0,
+            "pnl": NaN,
+            "sl": 3343.1,
+            "tp1": 3243.8,
+            "tp2": 3177.6
+        },
+        {
+            "stock": "BBRI.JK",
+            "side": "SELL",
+            "entry": NaN,
+            "current": 3260.0,
+            "pnl": NaN,
+            "sl": 3343.1,
+            "tp1": 3243.8,
+            "tp2": 3177.6
+        },
+        {
+            "stock": "TLKM.JK",
+            "side": "BUY",
+            "entry": NaN,
+            "current": 2960.0,
+            "pnl": NaN,
+            "sl": 2940.0,
+            "tp1": 3060.0,
+            "tp2": 3120.0
+        },
+        {
+            "stock": "BBCA.JK",
+            "side": "SELL",
+            "entry": 6175.0,
+            "current": 6175.0,
+            "pnl": 0.0,
+            "sl": 6236.75,
+            "tp1": 6051.5,
+            "tp2": 5928.0
+        },
+        {
+            "stock": "BBRI.JK",
+            "side": "SELL",
+            "entry": 3260.0,
+            "current": 3260.0,
+            "pnl": 0.0,
+            "sl": 3292.6,
+            "tp1": 3194.8,
+            "tp2": 3129.6
+        }
+    ]
 }
