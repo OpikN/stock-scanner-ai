@@ -8,22 +8,14 @@ from app.config import (
     STRATEGY_PATH
 )
 
-from app.portfolio import (
-    load_positions,
-    get_open_positions,
-    get_closed_positions,
-    get_live_equity,
-    get_closed_equity
-)
+import app.portfolio as portfolio
 
 # =========================
 # PAGE CONFIG
 # =========================
 
 st.set_page_config(
-
     page_title="AI Trading Terminal",
-
     layout="wide"
 )
 
@@ -31,19 +23,17 @@ st.set_page_config(
 # TITLE
 # =========================
 
-st.title(
-    DASHBOARD_TITLE
-)
+st.title(DASHBOARD_TITLE)
 
 # =========================
 # LOAD DATA
 # =========================
 
-positions = load_positions()
+positions = portfolio.load_positions()
 
-open_positions = get_open_positions()
+open_positions = portfolio.get_open_positions()
 
-closed_positions = get_closed_positions()
+closed_positions = portfolio.get_closed_positions()
 
 # =========================
 # DEBUG
@@ -57,42 +47,34 @@ st.write(
 # ACCOUNT
 # =========================
 
-st.header(
-    "💰 Account"
-)
+st.header("💰 Account")
 
 col1, col2, col3 = st.columns(3)
 
-closed_equity = get_closed_equity()
+closed_equity = portfolio.get_closed_equity()
 
-live_equity = get_live_equity()
+live_equity = portfolio.get_live_equity()
 
 floating = live_equity - closed_equity
 
 with col1:
 
     st.metric(
-
         "Closed Equity",
-
         f"{closed_equity:,.0f}"
     )
 
 with col2:
 
     st.metric(
-
         "Live Equity",
-
         f"{live_equity:,.0f}"
     )
 
 with col3:
 
     st.metric(
-
         "Floating PnL",
-
         f"{floating:,.0f}"
     )
 
@@ -100,29 +82,19 @@ with col3:
 # AI MODE
 # =========================
 
-st.header(
-    "🧠 AI Mode"
-)
+st.header("🧠 AI Mode")
 
-st.write(
-    "Mode: AGGRESSIVE"
-)
+st.write("Mode: AGGRESSIVE")
 
-st.write(
-    "Market Regime: TRENDING"
-)
+st.write("Market Regime: TRENDING")
 
 # =========================
 # STRATEGY
 # =========================
 
-st.header(
-    "🧠 AI Strategy"
-)
+st.header("🧠 AI Strategy")
 
-if os.path.exists(
-    STRATEGY_PATH
-):
+if os.path.exists(STRATEGY_PATH):
 
     with open(
         STRATEGY_PATH,
@@ -143,21 +115,17 @@ else:
 # BRAIN STATUS
 # =========================
 
-st.header(
-    "🧠 AI Brain Status"
-)
+st.header("🧠 AI Brain Status")
 
 st.write(
     "Last Optimizer Run: Active"
 )
 
 # =========================
-# RAW DATA
+# RAW CSV
 # =========================
 
-st.header(
-    "🛠 RAW CSV DATA"
-)
+st.header("🛠 RAW CSV DATA")
 
 if positions.empty:
 
@@ -175,14 +143,12 @@ else:
 # ALL POSITIONS
 # =========================
 
-st.header(
-    "📂 All Positions"
-)
+st.header("📂 All Positions")
 
 if positions.empty:
 
     st.info(
-        "Tidak ada data posisi"
+        "Tidak ada posisi"
     )
 
 else:
@@ -195,9 +161,7 @@ else:
 # OPEN POSITIONS
 # =========================
 
-st.header(
-    "📡 Open Positions"
-)
+st.header("📡 Open Positions")
 
 st.write(
     f"OPEN ROWS: `{len(open_positions)}`"
@@ -219,9 +183,7 @@ else:
 # CLOSED PNL
 # =========================
 
-st.header(
-    "📈 Closed PnL"
-)
+st.header("📈 Closed PnL")
 
 if closed_positions.empty:
 
@@ -236,9 +198,7 @@ else:
     ].sum()
 
     st.success(
-
-        f"TOTAL CLOSED PNL: "
-        f"{total_closed:,.0f}"
+        f"TOTAL CLOSED PNL: {total_closed:,.0f}"
     )
 
     st.dataframe(
