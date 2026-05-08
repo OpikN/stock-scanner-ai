@@ -30,8 +30,6 @@ def run():
 
     positions = []
 
-    floating_pnl = 0
-
     market_regime = (
         "TRENDING"
     )
@@ -55,10 +53,6 @@ def run():
             if data.empty:
 
                 continue
-
-            # =========================
-            # FIX CLOSE PRICE
-            # =========================
 
             close_data = data["Close"]
 
@@ -84,10 +78,6 @@ def run():
 
                 )
 
-            # =========================
-            # AI SIGNAL
-            # =========================
-
             result = generate_signal(
                 data
             )
@@ -99,10 +89,6 @@ def run():
             confidence = result[
                 "confidence"
             ]
-
-            # =========================
-            # TELEGRAM
-            # =========================
 
             send_market_update(
 
@@ -117,10 +103,6 @@ def run():
                 regime=market_regime
 
             )
-
-            # =========================
-            # SAVE POSITION
-            # =========================
 
             if signal in [
 
@@ -166,15 +148,11 @@ def run():
                 f"ERROR {stock}: {e}"
             )
 
-    # =========================
-    # LIVE JSON
-    # =========================
-
     live_data = {
 
         "equity": 100000000,
 
-        "floating_pnl": floating_pnl,
+        "floating_pnl": 0,
 
         "open_positions": positions,
 
@@ -183,8 +161,11 @@ def run():
     }
 
     os.makedirs(
+
         "data",
+
         exist_ok=True
+
     )
 
     with open(
