@@ -65,8 +65,10 @@ def run():
             regime = signal_data["regime"]
 
             price = float(
-                df["Close"].iloc[-1]
+            df["Close"].squeeze().iloc[-1]
             )
+            
+            
 
             print(
 
