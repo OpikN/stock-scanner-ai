@@ -56,11 +56,26 @@ def run():
 
                 continue
 
-            close_price = float(
+            close_data = data["Close"]
 
-                data["Close"].iloc[-1]
+if hasattr(
+    close_data,
+    "columns"
+):
 
-            )
+    close_price = float(
+
+        close_data.iloc[-1, 0]
+
+    )
+
+else:
+
+    close_price = float(
+
+        close_data.iloc[-1]
+
+    )
 
             result = generate_signal(
                 data
