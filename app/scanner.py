@@ -3,114 +3,67 @@ import os
 
 import yfinance as yf
 
-from app.strategy import (
-    generate_signal
-)
-
-from app.telegram_reports import (
-    send_market_update
-)
+from app.strategy import generate_signal
+from app.telegram_reports import send_market_update
 
 WATCHLIST = [
-
     "BBCA.JK",
-
     "BBRI.JK",
-
     "TLKM.JK"
-
 ]
 
 
 def run():
 
-    print(
-        "[SCANNER START]"
-    )
+    print("[SCANNER START]")
 
     positions = []
 
-    market_regime = (
-        "TRENDING"
-    )
+    market_regime = "TRENDING"
 
     for stock in WATCHLIST:
 
         try:
 
             data = yf.download(
-
                 stock,
-
                 period="5d",
-
                 interval="5m",
-
                 progress=False
-
             )
 
             if data.empty:
-
                 continue
 
             close_data = data["Close"]
 
-            if hasattr(
-
-                close_data,
-
-                "columns"
-
-            ):
+            if hasattr(close_data, "columns"):
 
                 close_price = float(
-
                     close_data.iloc[-1, 0]
-
                 )
 
             else:
 
                 close_price = float(
-
                     close_data.iloc[-1]
-
                 )
 
-            result = generate_signal(
-                data
-            )
+            result = generate_signal(data)
 
-            signal = result[
-                "signal"
-            ]
+            signal = result["signal"]
 
-            confidence = result[
-                "confidence"
-            ]
+            confidence = result["confidence"]
 
             send_market_update(
-
                 stock=stock,
-
                 signal=signal,
-
                 price=close_price,
-
                 confidence=confidence,
-
                 regime=market_regime
-
             )
 
-            if signal in [
-
-                "BUY",
-
-                "SELL"
-
-            ]:
+            if signal in ["BUY", "SELL"]:
 
                 positions.append({
 
@@ -144,9 +97,7 @@ def run():
 
         except Exception as e:
 
-            print(
-                f"ERROR {stock}: {e}"
-            )
+            print(f"ERROR {stock}: {e}")
 
     live_data = {
 
@@ -161,38 +112,24 @@ def run():
     }
 
     os.makedirs(
-
         "data",
-
         exist_ok=True
-
     )
 
     with open(
-
         "data/live_data.json",
-
         "w"
-
     ) as f:
 
         json.dump(
-
             live_data,
-
             f,
-
             indent=4
-
         )
 
-    print(
-        "[LIVE JSON UPDATED]"
-    )
+    print("[LIVE JSON UPDATED]")
 
-    print(
-        "[SCANNER FINISHED]"
-    )
+    print("[SCANNER FINISHED]")
 
 
 if __name__ == "__main__":
