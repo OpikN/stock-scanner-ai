@@ -248,3 +248,35 @@ def get_total_pnl():
         return 0
 
     return closed["pnl"].sum()
+# =========================
+# CALCULATE EQUITY
+# =========================
+
+def calculate_equity():
+
+    positions = get_open_positions()
+
+    initial_balance = 100000000
+
+    floating_pnl = 0
+
+    if not positions.empty:
+
+        floating_pnl = positions[
+            "pnl"
+        ].sum()
+
+    live_equity = (
+
+        initial_balance
+        + floating_pnl
+
+    )
+
+    return {
+
+        "live_equity": live_equity,
+
+        "floating_pnl": floating_pnl
+
+    }
