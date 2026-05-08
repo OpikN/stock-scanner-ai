@@ -80,9 +80,21 @@ def run():
             # SAFE PRICE FIX
             # =========================
 
-            price = float(
-                df["Close"].tail(1).item()
-            )
+            close_data = df["Close"]
+
+# HANDLE DATAFRAME
+if hasattr(close_data, "columns"):
+
+    price = float(
+        close_data.iloc[-1, 0]
+    )
+
+# HANDLE SERIES
+else:
+
+    price = float(
+        close_data.iloc[-1]
+    )
 
             # =========================
             # LOG
