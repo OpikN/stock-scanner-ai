@@ -1,47 +1,55 @@
 import pandas as pd
-import os
-import time
 
 from app.config import (
+
     POSITIONS_PATH,
+
     INITIAL_BALANCE,
-    SL_PERCENT,
+
     TP1_PERCENT,
+
     TP2_PERCENT,
-    TRAILING_PERCENT,
-    RISK_SAFE,
-    RISK_AGGRESSIVE,
-    MAX_OPEN_POSITIONS
+
+    SL_PERCENT
 )
 
-from app.telegram import (
-    send_telegram
+from app.telegram_reports import (
+
+    send_partial_close,
+
+    send_trailing_update,
+
+    send_position_closed
 )
+
 
 # =========================
 # LOAD POSITIONS
 # =========================
+
 def load_positions():
 
     try:
 
-        if os.path.exists(
+        df = pd.read_csv(
             POSITIONS_PATH
-        ):
+        )
 
-            return pd.read_csv(
-                POSITIONS_PATH
-            )
+        if df.empty:
 
-        return pd.DataFrame()
+            return pd.DataFrame()
+
+        return df
 
     except:
 
         return pd.DataFrame()
 
+
 # =========================
 # SAVE POSITIONS
 # =========================
+
 def save_positions(df):
 
     df.to_csv(
@@ -49,526 +57,378 @@ def save_positions(df):
         index=False
     )
 
-# =========================
-# LIVE EQUITY
-# =========================
-def get_live_equity():
-
-    df = load_positions()
-
-    if df.empty:
-
-        return INITIAL_BALANCE
-
-    pnl = df["pnl"].sum()
-
-    equity = (
-        INITIAL_BALANCE + pnl
-    )
-
-    if equity < 0:
-
-        equity = INITIAL_BALANCE
-
-    return round(
-        equity,
-        0
-    )
-
-# =========================
-# POSITION SIZE
-# =========================
-def calculate_position_size(
-    entry,
-    aggressive=True
-):
-
-    equity = get_live_equity()
-
-    risk = (
-        RISK_AGGRESSIVE
-        if aggressive
-        else RISK_SAFE
-    )
-
-    risk_amount = (
-        equity * risk
-    )
-
-    sl_distance = (
-        entry * SL_PERCENT
-    )
-
-    size = (
-        risk_amount /
-        sl_distance
-    )
-
-    max_position_value = (
-        equity * 0.2
-    )
-
-    max_size = (
-        max_position_value /
-        entry
-    )
-
-    if size > max_size:
-
-        size = max_size
-
-    return round(
-        size,
-        4
-    )
 
 # =========================
 # OPEN POSITION
 # =========================
+
 def open_position(
+
     stock,
+
     side,
+
     entry
 ):
 
-    df = load_positions()
+    positions = load_positions()
 
-    if not df.empty:
+    tp1 = (
 
-        open_count = len(
+        entry * (1 + TP1_PERCENT)
 
-            df[
-                df["status"]
-                == "OPEN"
-            ]
-        )
+        if side == "BUY"
 
-        if (
-            open_count
-            >=
-            MAX_OPEN_POSITIONS
-        ):
+        else
 
-            return
-
-    size = calculate_position_size(
-        entry
+        entry * (1 - TP1_PERCENT)
     )
 
-    if side == "BUY":
+    tp2 = (
 
-        sl = (
-            entry *
-            (1 - SL_PERCENT)
-        )
+        entry * (1 + TP2_PERCENT)
 
-        tp1 = (
-            entry *
-            (1 + TP1_PERCENT)
-        )
+        if side == "BUY"
 
-        tp2 = (
-            entry *
-            (1 + TP2_PERCENT)
-        )
+        else
 
-    else:
+        entry * (1 - TP2_PERCENT)
+    )
 
-        sl = (
-            entry *
-            (1 + SL_PERCENT)
-        )
+    sl = (
 
-        tp1 = (
-            entry *
-            (1 - TP1_PERCENT)
-        )
+        entry * (1 - SL_PERCENT)
 
-        tp2 = (
-            entry *
-            (1 - TP2_PERCENT)
-        )
+        if side == "BUY"
 
-    new_position = {
+        else
 
-        "time":
-            time.time(),
+        entry * (1 + SL_PERCENT)
+    )
 
-        "stock":
-            stock,
+    new_row = {
 
-        "side":
-            side,
+        "stock": stock,
 
-        "entry":
-            entry,
+        "side": side,
 
-        "size":
-            size,
+        "entry": entry,
 
-        "tp1":
-            tp1,
+        "tp1": tp1,
 
-        "tp2":
-            tp2,
+        "tp2": tp2,
 
-        "sl":
-            sl,
+        "sl": sl,
 
-        "status":
-            "OPEN",
+        "status": "OPEN",
 
-        "partial":
-            False,
+        "pnl": 0,
 
-        "pnl":
-            0
+        "partial_taken": False
     }
 
-    new_df = pd.DataFrame(
-        [new_position]
+    positions = pd.concat(
+
+        [
+
+            positions,
+
+            pd.DataFrame([new_row])
+        ],
+
+        ignore_index=True
     )
+
+    save_positions(
+        positions
+    )
+
+
+# =========================
+# GET OPEN POSITIONS
+# =========================
+
+def get_open_positions():
+
+    df = load_positions()
 
     if df.empty:
 
-        df = new_df
+        return pd.DataFrame()
 
-    else:
+    return df[
+        df["status"] == "OPEN"
+    ]
 
-        df = pd.concat(
 
-            [df, new_df],
+# =========================
+# GET CLOSED POSITIONS
+# =========================
 
-            ignore_index=True
-        )
+def get_closed_positions():
 
-    save_positions(df)
+    df = load_positions()
 
-    send_telegram(
+    if df.empty:
 
-        f"🚀 NEW POSITION\n\n"
+        return pd.DataFrame()
 
-        f"{stock}\n"
+    return df[
+        df["status"] == "CLOSED"
+    ]
 
-        f"{side}\n\n"
 
-        f"Entry: {entry:.2f}\n"
+# =========================
+# CLOSED EQUITY
+# =========================
 
-        f"TP1: {tp1:.2f}\n"
+def get_closed_equity():
 
-        f"TP2: {tp2:.2f}\n"
+    closed = get_closed_positions()
 
-        f"SL: {sl:.2f}\n\n"
+    if closed.empty:
 
-        f"💰 Equity: "
-        f"{get_live_equity():,.0f}"
-    )
+        return INITIAL_BALANCE
+
+    pnl = closed["pnl"].sum()
+
+    return INITIAL_BALANCE + pnl
+
+
+# =========================
+# LIVE EQUITY
+# =========================
+
+def get_live_equity():
+
+    open_df = get_open_positions()
+
+    closed_equity = get_closed_equity()
+
+    if open_df.empty:
+
+        return closed_equity
+
+    floating = open_df["pnl"].sum()
+
+    return closed_equity + floating
+
 
 # =========================
 # UPDATE POSITIONS
 # =========================
+
 def update_positions(
-    latest_prices
+
+    stock,
+
+    current_price
 ):
 
-    df = load_positions()
+    positions = load_positions()
 
-    if df.empty:
+    if positions.empty:
+
         return
 
-    for idx, row in df.iterrows():
+    for idx, row in positions.iterrows():
 
-        try:
+        if row["status"] != "OPEN":
 
-            if row["status"] != "OPEN":
-                continue
+            continue
 
-            stock = row["stock"]
+        if row["stock"] != stock:
 
-            side = row["side"]
+            continue
 
-            entry = float(
-                row["entry"]
+        side = row["side"]
+
+        entry = row["entry"]
+
+        pnl = 0
+
+        # =========================
+        # BUY
+        # =========================
+
+        if side == "BUY":
+
+            pnl = (
+
+                current_price - entry
+            ) * 100
+
+        # =========================
+        # SELL
+        # =========================
+
+        else:
+
+            pnl = (
+
+                entry - current_price
+            ) * 100
+
+        positions.loc[idx, "pnl"] = pnl
+
+        # =========================
+        # PARTIAL CLOSE
+        # =========================
+
+        if (
+
+            not row["partial_taken"]
+
+            and
+
+            (
+                (
+                    side == "BUY"
+
+                    and
+
+                    current_price >= row["tp1"]
+                )
+
+                or
+
+                (
+                    side == "SELL"
+
+                    and
+
+                    current_price <= row["tp1"]
+                )
             )
+        ):
 
-            size = float(
-                row["size"]
-            )
+            positions.loc[
+                idx,
+                "partial_taken"
+            ] = True
 
-            tp1 = float(
-                row["tp1"]
-            )
+            send_partial_close(
 
-            tp2 = float(
-                row["tp2"]
-            )
-
-            sl = float(
-                row["sl"]
-            )
-
-            partial = bool(
-                row["partial"]
-            )
-
-            current = latest_prices.get(
                 stock,
-                entry
+
+                pnl
             )
 
-            # =========================
-            # CALCULATE PNL
-            # =========================
-            if side == "BUY":
+        # =========================
+        # TRAILING STOP
+        # =========================
 
-                pnl = (
-                    current - entry
-                ) * size
+        if side == "BUY":
 
-            else:
+            new_sl = max(
 
-                pnl = (
-                    entry - current
-                ) * size
+                row["sl"],
 
-            df.at[idx, "pnl"] = pnl
-
-            # =========================
-            # PRICE CHANGE DETECTOR
-            # =========================
-            price_change = round(
-                current - entry,
-                2
+                current_price * 0.99
             )
 
-            if side == "SELL":
+        else:
 
-                price_change = round(
-                    entry - current,
-                    2
-                )
+            new_sl = min(
 
-            if (
-                abs(price_change) >= 5
+                row["sl"],
+
+                current_price * 1.01
+            )
+
+        if new_sl != row["sl"]:
+
+            positions.loc[
+                idx,
+                "sl"
+            ] = new_sl
+
+            send_trailing_update(
+
+                stock,
+
+                new_sl
+            )
+
+        # =========================
+        # TP2 CLOSE
+        # =========================
+
+        tp_hit = (
+
+            (
+                side == "BUY"
+
                 and
-                abs(pnl) >= 100000
-            ):
 
-                send_telegram(
-
-                    f"📈 PRICE UPDATE\n\n"
-
-                    f"{stock}\n\n"
-
-                    f"{entry:.2f} "
-                    f"→ "
-                    f"{current:.2f}\n\n"
-
-                    f"PnL:\n"
-
-                    f"{pnl:,.0f}"
-                )
-
-            # =========================
-            # LIVE POSITION
-            # =========================
-            if abs(pnl) > 100000:
-
-                send_telegram(
-
-                    f"📊 LIVE POSITION\n\n"
-
-                    f"{stock}\n"
-
-                    f"{side}\n\n"
-
-                    f"Entry: "
-                    f"{entry:.2f}\n"
-
-                    f"Current: "
-                    f"{current:.2f}\n\n"
-
-                    f"PnL:\n"
-
-                    f"{pnl:,.0f}\n\n"
-
-                    f"SL:\n"
-
-                    f"{sl:.2f}\n\n"
-
-                    f"TP1:\n"
-
-                    f"{tp1:.2f}"
-                )
-
-            # =========================
-            # BUY LOGIC
-            # =========================
-            if side == "BUY":
-
-                if (
-                    current >= tp1
-                    and
-                    not partial
-                ):
-
-                    df.at[
-                        idx,
-                        "partial"
-                    ] = True
-
-                    send_telegram(
-
-                        f"💰 PARTIAL CLOSE\n\n"
-
-                        f"{stock}\n"
-
-                        f"PnL: {pnl:,.0f}"
-                    )
-
-                trailing_sl = (
-                    current *
-                    (
-                        1 -
-                        TRAILING_PERCENT
-                    )
-                )
-
-                if trailing_sl > sl:
-
-                    df.at[
-                        idx,
-                        "sl"
-                    ] = trailing_sl
-
-                    send_telegram(
-
-                        f"📈 TRAILING UPDATE\n\n"
-
-                        f"{stock}\n"
-
-                        f"New SL: "
-                        f"{trailing_sl:.2f}"
-                    )
-
-                if (
-                    current >= tp2
-                    or
-                    current <= sl
-                ):
-
-                    df.at[
-                        idx,
-                        "status"
-                    ] = "CLOSED"
-
-                    result = (
-                        "TP HIT"
-                        if pnl > 0
-                        else "SL HIT"
-                    )
-
-                    send_telegram(
-
-                        f"🔥 POSITION CLOSED\n\n"
-
-                        f"{stock}\n"
-
-                        f"{result}\n\n"
-
-                        f"PnL: "
-                        f"{pnl:,.0f}\n\n"
-
-                        f"💰 Equity: "
-                        f"{get_live_equity():,.0f}"
-                    )
-
-            # =========================
-            # SELL LOGIC
-            # =========================
-            else:
-
-                if (
-                    current <= tp1
-                    and
-                    not partial
-                ):
-
-                    df.at[
-                        idx,
-                        "partial"
-                    ] = True
-
-                    send_telegram(
-
-                        f"💰 PARTIAL CLOSE\n\n"
-
-                        f"{stock}\n"
-
-                        f"PnL: {pnl:,.0f}"
-                    )
-
-                trailing_sl = (
-                    current *
-                    (
-                        1 +
-                        TRAILING_PERCENT
-                    )
-                )
-
-                if trailing_sl < sl:
-
-                    df.at[
-                        idx,
-                        "sl"
-                    ] = trailing_sl
-
-                    send_telegram(
-
-                        f"📈 TRAILING UPDATE\n\n"
-
-                        f"{stock}\n"
-
-                        f"New SL: "
-                        f"{trailing_sl:.2f}"
-                    )
-
-                if (
-                    current <= tp2
-                    or
-                    current >= sl
-                ):
-
-                    df.at[
-                        idx,
-                        "status"
-                    ] = "CLOSED"
-
-                    result = (
-                        "TP HIT"
-                        if pnl > 0
-                        else "SL HIT"
-                    )
-
-                    send_telegram(
-
-                        f"🔥 POSITION CLOSED\n\n"
-
-                        f"{stock}\n"
-
-                        f"{result}\n\n"
-
-                        f"PnL: "
-                        f"{pnl:,.0f}\n\n"
-
-                        f"💰 Equity: "
-                        f"{get_live_equity():,.0f}"
-                    )
-
-        except Exception as e:
-
-            print(
-                f"UPDATE ERROR: {e}"
+                current_price >= row["tp2"]
             )
 
-    save_positions(df)
+            or
+
+            (
+                side == "SELL"
+
+                and
+
+                current_price <= row["tp2"]
+            )
+        )
+
+        # =========================
+        # SL CLOSE
+        # =========================
+
+        sl_hit = (
+
+            (
+                side == "BUY"
+
+                and
+
+                current_price <= row["sl"]
+            )
+
+            or
+
+            (
+                side == "SELL"
+
+                and
+
+                current_price >= row["sl"]
+            )
+        )
+
+        if tp_hit or sl_hit:
+
+            positions.loc[
+                idx,
+                "status"
+            ] = "CLOSED"
+
+            reason = (
+
+                "TP HIT"
+
+                if tp_hit
+
+                else
+
+                "SL HIT"
+            )
+
+            send_position_closed(
+
+                stock,
+
+                reason,
+
+                pnl,
+
+                get_live_equity()
+            )
+
+    save_positions(
+        positions
+    )
