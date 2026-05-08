@@ -1,6 +1,25 @@
 {
     "equity": 100000000,
     "floating_pnl": 0,
-    "open_positions": [],
+    "open_positions": [
+        {
+            "stock": "BBCA.JK",
+            "side": "SELL",
+            "entry_price": 6175.0,
+            "current_price": 6175.0,
+            "pnl": 0,
+            "sl": 6113.25,
+            "tp1": 6298.5
+        },
+        {
+            "stock": "BBRI.JK",
+            "side": "SELL",
+            "entry_price": 3260.0,
+            "current_price": 3260.0,
+            "pnl": 0,
+            "sl": 3227.4,
+            "tp1": 3325.2
+        }
+    ],
     "market_regime": "TRENDING"
 }
