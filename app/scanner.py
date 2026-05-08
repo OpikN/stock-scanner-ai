@@ -47,7 +47,9 @@ def run():
 
                 interval="1d",
 
-                auto_adjust=True
+                auto_adjust=True,
+
+                progress=False
             )
 
             if df.empty:
@@ -75,11 +77,11 @@ def run():
             ]
 
             # =========================
-            # PRICE
+            # SAFE PRICE FIX
             # =========================
 
             price = float(
-                df["Close"].iloc[-1]
+                df["Close"].tail(1).item()
             )
 
             # =========================
@@ -98,7 +100,7 @@ def run():
             )
 
             # =========================
-            # UPDATE EXISTING POSITIONS
+            # UPDATE POSITIONS
             # =========================
 
             update_positions(
