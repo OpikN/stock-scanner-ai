@@ -1,3 +1,25 @@
+import sys
+import os
+
+# =========================
+# FIX PYTHON PATH
+# =========================
+
+ROOT_DIR = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__),
+        ".."
+    )
+)
+
+if ROOT_DIR not in sys.path:
+
+    sys.path.append(ROOT_DIR)
+
+# =========================
+# IMPORTS
+# =========================
+
 import streamlit as st
 
 from streamlit_autorefresh import (
@@ -6,7 +28,6 @@ from streamlit_autorefresh import (
 
 import pandas as pd
 import json
-import os
 
 from app.config import (
     DASHBOARD_TITLE,
