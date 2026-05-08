@@ -11,8 +11,12 @@ from app.strategy import (
 )
 
 from app.portfolio import (
+
     open_position,
-    update_positions
+
+    update_positions,
+
+    load_positions
 )
 
 from app.telegram import (
@@ -107,6 +111,52 @@ def run():
                 stock,
                 price
             )
+
+            # =========================
+            # LIVE POSITION TELEGRAM
+            # =========================
+
+            positions = load_positions()
+
+            for _, pos in positions.iterrows():
+
+                if pos["status"] != "OPEN":
+
+                    continue
+
+                if pos["stock"] != stock:
+
+                    continue
+
+                pnl = round(
+                    pos["pnl"],
+                    0
+                )
+
+                send_telegram(
+
+                    f"📊 LIVE POSITION\n\n"
+
+                    f"{stock}\n"
+
+                    f"{pos['side']}\n\n"
+
+                    f"Entry: {pos['entry']}\n"
+
+                    f"Current: {price:.2f}\n\n"
+
+                    f"PnL:\n"
+
+                    f"{pnl:,.0f}\n\n"
+
+                    f"SL:\n"
+
+                    f"{pos['sl']}\n\n"
+
+                    f"TP1:\n"
+
+                    f"{pos['tp1']}"
+                )
 
             # =========================
             # TELEGRAM MARKET UPDATE
@@ -310,6 +360,44 @@ def run():
 
             f"100,000,000"
         )
+
+    # =========================
+    # POSITION SUMMARY
+    # =========================
+
+    positions = load_positions()
+
+    open_positions = positions[
+        positions["status"] == "OPEN"
+    ]
+
+    floating = round(
+
+        open_positions[
+            "pnl"
+        ].sum(),
+
+        0
+    )
+
+    equity = (
+        100000000 + floating
+    )
+
+    send_telegram(
+
+        f"📡 OPEN POSITIONS\n\n"
+
+        f"{len(open_positions)} OPEN\n\n"
+
+        f"💰 Floating:\n"
+
+        f"{floating:,.0f}\n\n"
+
+        f"💰 Equity:\n"
+
+        f"{equity:,.0f}"
+    )
 
     print(
         "[LOG] ✅ SCANNER FINISHED"
