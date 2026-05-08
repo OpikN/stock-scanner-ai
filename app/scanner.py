@@ -47,7 +47,7 @@ def get_data(stock):
 
             stock,
 
-            period="3mo",
+            period="60d",
 
             interval="5m",
 
