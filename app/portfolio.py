@@ -1,9 +1,61 @@
+import os
 import pandas as pd
 
-from app.config import (
-    POSITIONS_PATH,
-    INITIAL_BALANCE
+# =========================
+# PORTFOLIO PATH
+# =========================
+
+POSITIONS_PATH = (
+    "data/positions.csv"
 )
+
+INITIAL_BALANCE = (
+    100000000
+)
+
+# =========================
+# ENSURE DATA DIR
+# =========================
+
+os.makedirs(
+    "data",
+    exist_ok=True
+)
+
+# =========================
+# CREATE FILE IF NOT EXISTS
+# =========================
+
+if not os.path.exists(
+    POSITIONS_PATH
+):
+
+    df = pd.DataFrame(columns=[
+
+        "stock",
+
+        "side",
+
+        "entry_price",
+
+        "current_price",
+
+        "pnl",
+
+        "sl",
+
+        "tp1",
+
+        "tp2",
+
+        "status"
+
+    ])
+
+    df.to_csv(
+        POSITIONS_PATH,
+        index=False
+    )
 
 # =========================
 # LOAD POSITIONS
@@ -11,30 +63,9 @@ from app.config import (
 
 def load_positions():
 
-    try:
-
-        return pd.read_csv(
-            POSITIONS_PATH
-        )
-
-    except Exception:
-
-        columns = [
-
-            "stock",
-            "side",
-            "entry",
-            "tp1",
-            "tp2",
-            "sl",
-            "status",
-            "pnl",
-            "partial_taken"
-        ]
-
-        return pd.DataFrame(
-            columns=columns
-        )
+    return pd.read_csv(
+        POSITIONS_PATH
+    )
 
 # =========================
 # SAVE POSITIONS
@@ -43,8 +74,11 @@ def load_positions():
 def save_positions(df):
 
     df.to_csv(
+
         POSITIONS_PATH,
+
         index=False
+
     )
 
 # =========================
@@ -57,53 +91,59 @@ def open_position(
 
     side,
 
-    entry,
+    entry_price,
+
+    sl,
 
     tp1,
 
-    tp2,
+    tp2
 
-    sl
 ):
 
-    positions = load_positions()
+    df = load_positions()
 
-    new_row = {
+    new_position = {
 
         "stock": stock,
 
         "side": side,
 
-        "entry": entry,
+        "entry_price": entry_price,
+
+        "current_price": entry_price,
+
+        "pnl": 0,
+
+        "sl": sl,
 
         "tp1": tp1,
 
         "tp2": tp2,
 
-        "sl": sl,
+        "status": "OPEN"
 
-        "status": "OPEN",
-
-        "pnl": 0,
-
-        "partial_taken": False
     }
 
-    positions = pd.concat(
+    df = pd.concat(
 
         [
 
-            positions,
+            df,
 
-            pd.DataFrame([new_row])
+            pd.DataFrame([
+
+                new_position
+
+            ])
+
         ],
 
         ignore_index=True
+
     )
 
-    save_positions(
-        positions
-    )
+    save_positions(df)
 
 # =========================
 # UPDATE POSITIONS
@@ -114,52 +154,66 @@ def update_positions(
     stock,
 
     current_price
+
 ):
 
-    positions = load_positions()
+    df = load_positions()
 
-    if positions.empty:
+    if df.empty:
 
         return
 
-    for idx, row in positions.iterrows():
+    for idx, row in df.iterrows():
 
-        if row["status"] != "OPEN":
+        if (
 
-            continue
+            row["stock"] == stock
 
-        if row["stock"] != stock:
+            and
 
-            continue
+            row["status"] == "OPEN"
 
-        side = row["side"]
+        ):
 
-        entry = float(
-            row["entry"]
-        )
+            df.at[
 
-        pnl = 0
+                idx,
 
-        if side == "BUY":
+                "current_price"
 
-            pnl = (
-                current_price - entry
-            ) * 100
+            ] = current_price
 
-        else:
+            # =========================
+            # CALCULATE PNL
+            # =========================
 
-            pnl = (
-                entry - current_price
-            ) * 100
+            if row["side"] == "BUY":
 
-        positions.loc[
-            idx,
-            "pnl"
-        ] = pnl
+                pnl = (
 
-    save_positions(
-        positions
-    )
+                    current_price
+                    - row["entry_price"]
+
+                ) * 100
+
+            else:
+
+                pnl = (
+
+                    row["entry_price"]
+                    - current_price
+
+                ) * 100
+
+            df.at[
+
+                idx,
+
+                "pnl"
+
+            ] = pnl
+
+    save_positions(df)
 
 # =========================
 # GET OPEN POSITIONS
@@ -171,83 +225,14 @@ def get_open_positions():
 
     if df.empty:
 
-        return pd.DataFrame()
+        return df
 
     return df[
+
         df["status"] == "OPEN"
+
     ]
 
-# =========================
-# GET CLOSED POSITIONS
-# =========================
-
-def get_closed_positions():
-
-    df = load_positions()
-
-    if df.empty:
-
-        return pd.DataFrame()
-
-    return df[
-        df["status"] == "CLOSED"
-    ]
-
-# =========================
-# CLOSED EQUITY
-# =========================
-
-def get_closed_equity():
-
-    closed = get_closed_positions()
-
-    if closed.empty:
-
-        return INITIAL_BALANCE
-
-    pnl = closed["pnl"].sum()
-
-    return INITIAL_BALANCE + pnl
-
-# =========================
-# LIVE EQUITY
-# =========================
-
-def get_live_equity():
-
-    open_df = get_open_positions()
-
-    closed_equity = get_closed_equity()
-
-    if open_df.empty:
-
-        return closed_equity
-
-    floating = open_df["pnl"].sum()
-
-    return closed_equity + floating
-
-# =========================
-# BALANCE
-# =========================
-
-def get_balance():
-
-    return get_closed_equity()
-
-# =========================
-# TOTAL PNL
-# =========================
-
-def get_total_pnl():
-
-    closed = get_closed_positions()
-
-    if closed.empty:
-
-        return 0
-
-    return closed["pnl"].sum()
 # =========================
 # CALCULATE EQUITY
 # =========================
@@ -255,8 +240,6 @@ def get_total_pnl():
 def calculate_equity():
 
     positions = get_open_positions()
-
-    initial_balance = 100000000
 
     floating_pnl = 0
 
@@ -268,7 +251,7 @@ def calculate_equity():
 
     live_equity = (
 
-        initial_balance
+        INITIAL_BALANCE
         + floating_pnl
 
     )
