@@ -50,7 +50,129 @@ def save_positions(df):
     )
 
 # =========================
-# OPEN POSITIONS
+# OPEN POSITION
+# =========================
+
+def open_position(
+
+    stock,
+
+    side,
+
+    entry,
+
+    tp1,
+
+    tp2,
+
+    sl
+):
+
+    positions = load_positions()
+
+    new_row = {
+
+        "stock": stock,
+
+        "side": side,
+
+        "entry": entry,
+
+        "tp1": tp1,
+
+        "tp2": tp2,
+
+        "sl": sl,
+
+        "status": "OPEN",
+
+        "pnl": 0,
+
+        "partial_taken": False
+    }
+
+    positions = pd.concat(
+
+        [
+
+            positions,
+
+            pd.DataFrame([new_row])
+        ],
+
+        ignore_index=True
+    )
+
+    save_positions(
+        positions
+    )
+
+# =========================
+# UPDATE POSITIONS
+# =========================
+
+def update_positions(
+
+    stock,
+
+    current_price
+):
+
+    positions = load_positions()
+
+    if positions.empty:
+
+        return
+
+    for idx, row in positions.iterrows():
+
+        if row["status"] != "OPEN":
+
+            continue
+
+        if row["stock"] != stock:
+
+            continue
+
+        side = row["side"]
+
+        entry = float(
+            row["entry"]
+        )
+
+        pnl = 0
+
+        # =========================
+        # BUY
+        # =========================
+
+        if side == "BUY":
+
+            pnl = (
+                current_price - entry
+            ) * 100
+
+        # =========================
+        # SELL
+        # =========================
+
+        else:
+
+            pnl = (
+                entry - current_price
+            ) * 100
+
+        positions.loc[
+            idx,
+            "pnl"
+        ] = pnl
+
+    save_positions(
+        positions
+    )
+
+# =========================
+# GET OPEN POSITIONS
 # =========================
 
 def get_open_positions():
@@ -66,7 +188,7 @@ def get_open_positions():
     ]
 
 # =========================
-# CLOSED POSITIONS
+# GET CLOSED POSITIONS
 # =========================
 
 def get_closed_positions():
