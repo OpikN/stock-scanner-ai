@@ -19,7 +19,7 @@ def load_positions():
 
         return df
 
-    except:
+    except Exception:
 
         columns = [
 
@@ -44,10 +44,18 @@ def load_positions():
 
 def save_positions(df):
 
-    df.to_csv(
-        POSITIONS_PATH,
-        index=False
-    )
+    try:
+
+        df.to_csv(
+            POSITIONS_PATH,
+            index=False
+        )
+
+    except Exception as e:
+
+        print(
+            f"SAVE ERROR: {e}"
+        )
 
 # =========================
 # OPEN POSITION
@@ -68,44 +76,52 @@ def open_position(
     sl
 ):
 
-    positions = load_positions()
+    try:
 
-    new_row = {
+        positions = load_positions()
 
-        "stock": stock,
+        new_row = {
 
-        "side": side,
+            "stock": stock,
 
-        "entry": entry,
+            "side": side,
 
-        "tp1": tp1,
+            "entry": entry,
 
-        "tp2": tp2,
+            "tp1": tp1,
 
-        "sl": sl,
+            "tp2": tp2,
 
-        "status": "OPEN",
+            "sl": sl,
 
-        "pnl": 0,
+            "status": "OPEN",
 
-        "partial_taken": False
-    }
+            "pnl": 0,
 
-    positions = pd.concat(
+            "partial_taken": False
+        }
 
-        [
+        positions = pd.concat(
 
-            positions,
+            [
 
-            pd.DataFrame([new_row])
-        ],
+                positions,
 
-        ignore_index=True
-    )
+                pd.DataFrame([new_row])
+            ],
 
-    save_positions(
-        positions
-    )
+            ignore_index=True
+        )
+
+        save_positions(
+            positions
+        )
+
+    except Exception as e:
+
+        print(
+            f"OPEN POSITION ERROR: {e}"
+        )
 
 # =========================
 # UPDATE POSITIONS
@@ -118,58 +134,68 @@ def update_positions(
     current_price
 ):
 
-    positions = load_positions()
+    try:
 
-    if positions.empty:
+        positions = load_positions()
 
-        return
+        if positions.empty:
 
-    for idx, row in positions.iterrows():
+            return
 
-        if row["status"] != "OPEN":
+        for idx, row in positions.iterrows():
 
-            continue
+            if row["status"] != "OPEN":
 
-        if row["stock"] != stock:
+                continue
 
-            continue
+            if row["stock"] != stock:
 
-        side = row["side"]
+                continue
 
-        entry = float(
-            row["entry"]
+            side = str(
+                row["side"]
+            )
+
+            entry = float(
+                row["entry"]
+            )
+
+            pnl = 0
+
+            # =========================
+            # BUY
+            # =========================
+
+            if side == "BUY":
+
+                pnl = (
+                    current_price - entry
+                ) * 100
+
+            # =========================
+            # SELL
+            # =========================
+
+            else:
+
+                pnl = (
+                    entry - current_price
+                ) * 100
+
+            positions.loc[
+                idx,
+                "pnl"
+            ] = pnl
+
+        save_positions(
+            positions
         )
 
-        pnl = 0
+    except Exception as e:
 
-        # =========================
-        # BUY
-        # =========================
-
-        if side == "BUY":
-
-            pnl = (
-                current_price - entry
-            ) * 100
-
-        # =========================
-        # SELL
-        # =========================
-
-        else:
-
-            pnl = (
-                entry - current_price
-            ) * 100
-
-        positions.loc[
-            idx,
-            "pnl"
-        ] = pnl
-
-    save_positions(
-        positions
-    )
+        print(
+            f"UPDATE POSITION ERROR: {e}"
+        )
 
 # =========================
 # GET OPEN POSITIONS
@@ -177,15 +203,21 @@ def update_positions(
 
 def get_open_positions():
 
-    df = load_positions()
+    try:
 
-    if df.empty:
+        df = load_positions()
 
-        return df
+        if df.empty:
 
-    return df[
-        df["status"] == "OPEN"
-    ]
+            return pd.DataFrame()
+
+        return df[
+            df["status"] == "OPEN"
+        ]
+
+    except Exception:
+
+        return pd.DataFrame()
 
 # =========================
 # GET CLOSED POSITIONS
@@ -193,15 +225,21 @@ def get_open_positions():
 
 def get_closed_positions():
 
-    df = load_positions()
+    try:
 
-    if df.empty:
+        df = load_positions()
 
-        return df
+        if df.empty:
 
-    return df[
-        df["status"] == "CLOSED"
-    ]
+            return pd.DataFrame()
+
+        return df[
+            df["status"] == "CLOSED"
+        ]
+
+    except Exception:
+
+        return pd.DataFrame()
 
 # =========================
 # CLOSED EQUITY
@@ -209,15 +247,21 @@ def get_closed_positions():
 
 def get_closed_equity():
 
-    closed = get_closed_positions()
+    try:
 
-    if closed.empty:
+        closed = get_closed_positions()
+
+        if closed.empty:
+
+            return INITIAL_BALANCE
+
+        pnl = closed["pnl"].sum()
+
+        return INITIAL_BALANCE + pnl
+
+    except Exception:
 
         return INITIAL_BALANCE
-
-    pnl = closed["pnl"].sum()
-
-    return INITIAL_BALANCE + pnl
 
 # =========================
 # LIVE EQUITY
@@ -225,17 +269,23 @@ def get_closed_equity():
 
 def get_live_equity():
 
-    open_df = get_open_positions()
+    try:
 
-    closed_equity = get_closed_equity()
+        open_df = get_open_positions()
 
-    if open_df.empty:
+        closed_equity = get_closed_equity()
 
-        return closed_equity
+        if open_df.empty:
 
-    floating = open_df["pnl"].sum()
+            return closed_equity
 
-    return closed_equity + floating
+        floating = open_df["pnl"].sum()
+
+        return closed_equity + floating
+
+    except Exception:
+
+        return INITIAL_BALANCE
 
 # =========================
 # BALANCE
@@ -243,7 +293,13 @@ def get_live_equity():
 
 def get_balance():
 
-    return get_closed_equity()
+    try:
+
+        return get_closed_equity()
+
+    except Exception:
+
+        return INITIAL_BALANCE
 
 # =========================
 # TOTAL PNL
@@ -251,10 +307,16 @@ def get_balance():
 
 def get_total_pnl():
 
-    closed = get_closed_positions()
+    try:
 
-    if closed.empty:
+        closed = get_closed_positions()
+
+        if closed.empty:
+
+            return 0
+
+        return closed["pnl"].sum()
+
+    except Exception:
 
         return 0
-
-    return closed["pnl"].sum()
