@@ -57,7 +57,7 @@ def run():
                 continue
 
             # =========================
-            # SIGNAL ENGINE
+            # GENERATE SIGNAL
             # =========================
 
             signal_data = generate_signal(
@@ -80,21 +80,9 @@ def run():
             # SAFE PRICE FIX
             # =========================
 
-            close_data = df["Close"]
-
-# HANDLE DATAFRAME
-if hasattr(close_data, "columns"):
-
-    price = float(
-        close_data.iloc[-1, 0]
-    )
-
-# HANDLE SERIES
-else:
-
-    price = float(
-        close_data.iloc[-1]
-    )
+            price = float(
+                df["Close"].values[-1]
+            )
 
             # =========================
             # LOG
@@ -112,7 +100,7 @@ else:
             )
 
             # =========================
-            # UPDATE POSITIONS
+            # UPDATE LIVE PNL
             # =========================
 
             update_positions(
@@ -140,7 +128,7 @@ else:
             )
 
             # =========================
-            # FILTER HOLD
+            # SKIP HOLD
             # =========================
 
             if signal == "HOLD":
@@ -148,7 +136,7 @@ else:
                 continue
 
             # =========================
-            # FILTER CONFIDENCE
+            # MIN CONFIDENCE
             # =========================
 
             if confidence < MIN_CONFIDENCE:
@@ -175,7 +163,7 @@ else:
             )
 
     # =========================
-    # SORT CONFIDENCE
+    # SORT BY CONFIDENCE
     # =========================
 
     ranked_trades = sorted(
@@ -190,7 +178,7 @@ else:
     )
 
     # =========================
-    # TAKE TOP AI TRADES
+    # TOP AI TRADES
     # =========================
 
     ranked_trades = ranked_trades[
@@ -198,7 +186,7 @@ else:
     ]
 
     # =========================
-    # OPEN POSITIONS
+    # OPEN POSITION
     # =========================
 
     for trade in ranked_trades:
