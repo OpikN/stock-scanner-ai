@@ -4,12 +4,14 @@ import pandas as pd
 import yfinance as yf
 
 from app.strategy import generate_signal
+
 from app.portfolio import (
     open_position,
     update_positions,
     get_open_positions,
     calculate_equity
 )
+
 from app.telegram_reports import (
     send_market_update,
     send_position_summary
@@ -60,7 +62,7 @@ def run():
 
             close_data = data["Close"]
 
-            # FIX SERIES
+            # FIX DATAFRAME / SERIES
             if hasattr(close_data, "columns"):
 
                 close_price = float(
@@ -106,13 +108,13 @@ def run():
 
                 open_position(
 
-                    stock=stock,
+                    stock,
 
-                    side=signal,
+                    signal,
 
-                    entry_price=close_price,
+                    close_price,
 
-                    sl=round(
+                    round(
 
                         close_price * 1.01,
 
@@ -126,7 +128,7 @@ def run():
 
                     ),
 
-                    tp1=round(
+                    round(
 
                         close_price * 0.98,
 
@@ -140,7 +142,7 @@ def run():
 
                     ),
 
-                    tp2=round(
+                    round(
 
                         close_price * 0.96,
 
@@ -204,7 +206,7 @@ def run():
     floating_pnl = account_data["floating_pnl"]
 
     # =========================
-    # LIVE JSON DATA
+    # LIVE DASHBOARD JSON
     # =========================
 
     positions_data = []
@@ -220,15 +222,15 @@ def run():
                 "side": row["side"],
 
                 "entry": float(
-                    row["entry_price"]
+                    row["entry"]
                 ),
 
                 "current": float(
-                    row["current_price"]
+                    row["current"]
                 ),
 
                 "pnl": float(
-                    row["pnl"]
+                    row["floating_pnl"]
                 ),
 
                 "sl": float(
