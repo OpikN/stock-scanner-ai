@@ -81,7 +81,7 @@ def run():
             # =========================
 
             price = float(
-                df["Close"].values[-1]
+            df["Close"].iloc[-1].squeeze()
             )
 
             # =========================
