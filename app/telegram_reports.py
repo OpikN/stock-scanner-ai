@@ -1,111 +1,168 @@
-from app.telegram import send_telegram
+import requests
 
+from app.config import (
+    TELEGRAM_BOT_TOKEN,
+    TELEGRAM_CHAT_ID
+)
+
+# =========================
+# SEND TELEGRAM MESSAGE
+# =========================
+
+def send_telegram_message(message):
+
+    try:
+
+        url = (
+
+            f"https://api.telegram.org/bot"
+            f"{TELEGRAM_BOT_TOKEN}"
+            f"/sendMessage"
+
+        )
+
+        payload = {
+
+            "chat_id": TELEGRAM_CHAT_ID,
+
+            "text": message
+
+        }
+
+        requests.post(
+
+            url,
+
+            data=payload,
+
+            timeout=10
+
+        )
+
+    except Exception as e:
+
+        print(
+            f"TELEGRAM ERROR: {e}"
+        )
+
+
+# =========================
+# MARKET UPDATE
+# =========================
 
 def send_market_update(
+
     stock,
+
     signal,
+
     price,
+
     confidence,
-    regime,
-    equity
+
+    regime
+
 ):
 
-    send_telegram(
+    message = f"""
 
-        f"🧠 MARKET UPDATE\n\n"
+🧠 MARKET UPDATE
 
-        f"{stock}\n\n"
+{stock}
 
-        f"Signal: {signal}\n"
+Signal: {signal}
 
-        f"Price: {price:.2f}\n"
+Price: {price:.2f}
 
-        f"Confidence: {confidence}%\n"
+Confidence: {confidence}%
 
-        f"Regime: {regime}\n\n"
+Regime: {regime}
 
-        f"💰 Equity:\n"
+"""
 
-        f"{equity:,.0f}"
+    send_telegram_message(
+        message
     )
 
 
-def send_new_position(
+# =========================
+# LIVE POSITION
+# =========================
+
+def send_live_position(
+
     stock,
+
     side,
+
     entry,
-    tp1,
-    tp2,
-    sl,
-    equity
-):
 
-    send_telegram(
+    current,
 
-        f"🚀 NEW POSITION\n\n"
-
-        f"{stock}\n"
-
-        f"{side}\n\n"
-
-        f"Entry: {entry:.2f}\n\n"
-
-        f"TP1: {tp1:.2f}\n"
-
-        f"TP2: {tp2:.2f}\n\n"
-
-        f"SL: {sl:.2f}\n\n"
-
-        f"💰 Equity: {equity:,.0f}"
-    )
-
-
-def send_trailing_update(
-    stock,
-    new_sl
-):
-
-    send_telegram(
-
-        f"📈 TRAILING UPDATE\n\n"
-
-        f"{stock}\n\n"
-
-        f"New SL: {new_sl:.2f}"
-    )
-
-
-def send_partial_close(
-    stock,
-    pnl
-):
-
-    send_telegram(
-
-        f"💰 PARTIAL CLOSE\n\n"
-
-        f"{stock}\n\n"
-
-        f"PnL: {pnl:,.0f}"
-    )
-
-
-def send_position_closed(
-    stock,
-    reason,
     pnl,
-    equity
+
+    sl,
+
+    tp1
+
 ):
 
-    send_telegram(
+    message = f"""
 
-        f"🔥 POSITION CLOSED\n\n"
+📊 LIVE POSITION
 
-        f"{stock}\n\n"
+{stock}
 
-        f"{reason}\n\n"
+{side}
 
-        f"PnL: {pnl:,.0f}\n\n"
+Entry: {entry}
 
-        f"💰 Equity: {equity:,.0f}"
+Current: {current}
+
+PnL:
+{pnl:,.0f}
+
+SL:
+{sl}
+
+TP1:
+{tp1}
+
+"""
+
+    send_telegram_message(
+        message
+    )
+
+
+# =========================
+# POSITION SUMMARY
+# =========================
+
+def send_position_summary(
+
+    open_count,
+
+    floating_pnl,
+
+    equity
+
+):
+
+    message = f"""
+
+📡 OPEN POSITIONS
+
+{open_count} OPEN
+
+💰 Floating:
+{floating_pnl:,.0f}
+
+💰 Equity:
+{equity:,.0f}
+
+"""
+
+    send_telegram_message(
+        message
     )
