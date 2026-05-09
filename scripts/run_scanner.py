@@ -13,7 +13,7 @@ sys.path.append(
     )
 )
 
-from app.scanner import run
+from app.scanner import run()
 
 # =========================
 # RUN ENGINE
