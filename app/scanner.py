@@ -6,6 +6,7 @@ import yfinance as yf
 from app.strategy import generate_signal
 from app.telegram_reports import send_market_update
 
+
 WATCHLIST = [
     "BBCA.JK",
     "BBRI.JK",
@@ -26,10 +27,15 @@ def run():
         try:
 
             data = yf.download(
+
                 stock,
+
                 period="5d",
+
                 interval="5m",
+
                 progress=False
+
             )
 
             if data.empty:
@@ -56,11 +62,17 @@ def run():
             confidence = result["confidence"]
 
             send_market_update(
+
                 stock=stock,
+
                 signal=signal,
+
                 price=close_price,
+
                 confidence=confidence,
+
                 regime=market_regime
+
             )
 
             if signal in ["BUY", "SELL"]:
