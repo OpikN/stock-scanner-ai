@@ -1,111 +1,91 @@
-from app.telegram import send_telegram
+import os
+import requests
+
+TELEGRAM_BOT_TOKEN = os.getenv(
+    "TELEGRAM_BOT_TOKEN"
+)
+
+TELEGRAM_CHAT_ID = os.getenv(
+    "TELEGRAM_CHAT_ID"
+)
 
 
 def send_market_update(
+
     stock,
+
     signal,
+
     price,
+
     confidence,
-    regime,
-    equity
+
+    regime
+
 ):
 
-    send_telegram(
+    if not TELEGRAM_BOT_TOKEN:
 
-        f"🧠 MARKET UPDATE\n\n"
+        print(
+            "NO TELEGRAM TOKEN"
+        )
 
-        f"{stock}\n\n"
+        return
 
-        f"Signal: {signal}\n"
+    text = f"""
+🧠 MARKET UPDATE
 
-        f"Price: {price:.2f}\n"
+{stock}
 
-        f"Confidence: {confidence}%\n"
+Signal:
+{signal}
 
-        f"Regime: {regime}\n\n"
+Price:
+{price}
 
-        f"💰 Equity:\n"
+Confidence:
+{confidence}%
 
-        f"{equity:,.0f}"
+Regime:
+{regime}
+"""
+
+    url = (
+
+        f"https://api.telegram.org/bot"
+
+        f"{TELEGRAM_BOT_TOKEN}"
+
+        f"/sendMessage"
+
     )
 
+    payload = {
 
-def send_new_position(
-    stock,
-    side,
-    entry,
-    tp1,
-    tp2,
-    sl,
-    equity
-):
+        "chat_id": TELEGRAM_CHAT_ID,
 
-    send_telegram(
+        "text": text
 
-        f"🚀 NEW POSITION\n\n"
+    }
 
-        f"{stock}\n"
+    try:
 
-        f"{side}\n\n"
+        requests.post(
 
-        f"Entry: {entry:.2f}\n\n"
+            url,
 
-        f"TP1: {tp1:.2f}\n"
+            json=payload,
 
-        f"TP2: {tp2:.2f}\n\n"
+            timeout=10
 
-        f"SL: {sl:.2f}\n\n"
+        )
 
-        f"💰 Equity: {equity:,.0f}"
-    )
+        print(
+            f"[TELEGRAM SENT] {stock}"
+        )
 
+    except Exception as e:
 
-def send_trailing_update(
-    stock,
-    new_sl
-):
-
-    send_telegram(
-
-        f"📈 TRAILING UPDATE\n\n"
-
-        f"{stock}\n\n"
-
-        f"New SL: {new_sl:.2f}"
-    )
-
-
-def send_partial_close(
-    stock,
-    pnl
-):
-
-    send_telegram(
-
-        f"💰 PARTIAL CLOSE\n\n"
-
-        f"{stock}\n\n"
-
-        f"PnL: {pnl:,.0f}"
-    )
-
-
-def send_position_closed(
-    stock,
-    reason,
-    pnl,
-    equity
-):
-
-    send_telegram(
-
-        f"🔥 POSITION CLOSED\n\n"
-
-        f"{stock}\n\n"
-
-        f"{reason}\n\n"
-
-        f"PnL: {pnl:,.0f}\n\n"
-
-        f"💰 Equity: {equity:,.0f}"
-    )
+        print(
+            f"TELEGRAM ERROR: {e}"
+        )

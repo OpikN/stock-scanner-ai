@@ -7,22 +7,13 @@ def run():
 
     print("[SCANNER START]")
 
-    current_price = random.randint(
-        3200,
-        3400
-    )
+    current_price = random.randint(3200, 3400)
 
-    pnl = random.randint(
-        -50000,
-        150000
-    )
+    pnl = random.randint(-50000, 150000)
 
-    floating_pnl = random.randint(
-        -100000,
-        300000
-    )
+    floating_pnl = random.randint(-100000, 300000)
 
-    equity = 100000000 + floating_pnl
+    equity = random.randint(99000000, 101000000)
 
     live_data = {
 

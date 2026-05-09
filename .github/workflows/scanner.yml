@@ -1,100 +1,45 @@
-name: AI Scanner
+name: AI Scanner 24/7
 
 on:
+  schedule:
+    - cron: "*/5 * * * *"
 
   workflow_dispatch:
 
-  schedule:
-    - cron: "*/1 * * * *"
-
 jobs:
-
   scanner:
 
     runs-on: ubuntu-latest
 
     steps:
 
-      # =========================
-      # CHECKOUT
-      # =========================
-      - name: Checkout Repository
-
+      - name: Checkout Repo
         uses: actions/checkout@v4
 
-        with:
-          fetch-depth: 0
-
-      # =========================
-      # PYTHON
-      # =========================
       - name: Setup Python
-
         uses: actions/setup-python@v5
-
         with:
           python-version: "3.11"
 
-      # =========================
-      # INSTALL
-      # =========================
       - name: Install Dependencies
-
         run: |
+          pip install yfinance pandas
 
-          pip install --upgrade pip
-
-          pip install pandas
-
-          pip install numpy
-
-          pip install yfinance
-
-          pip install requests
-
-          pip install ta==0.11.0
-
-      # =========================
-      # RUN SCANNER
-      # =========================
-      - name: Run AI Scanner
-
-        env:
-
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
+      - name: Run Scanner
         run: |
-
           python scripts/run_scanner.py
 
-      # =========================
-      # GIT CONFIG
-      # =========================
-      - name: Git Config
-
+      - name: Copy JSON
         run: |
+          cp data/live_data.json dashboard-next/public/live_data.json
 
+      - name: Commit JSON
+        run: |
           git config --global user.name "github-actions"
-
           git config --global user.email "actions@github.com"
-
-      # =========================
-      # AUTO PUSH
-      # =========================
-      - name: Push Updates
-
-        run: |
-
-          git stash
-
-          git pull --rebase origin main
-
-          git stash pop || true
 
           git add .
 
-          git commit -m "auto update" || echo "no changes"
+          git commit -m "auto update live json" || echo "no changes"
 
           git push

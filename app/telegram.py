@@ -48,3 +48,35 @@ def send_telegram(message):
         print(
             f"TELEGRAM ERROR: {e}"
         )
+
+# =========================
+# POSITION SUMMARY
+# =========================
+
+def send_position_summary(
+
+    open_count,
+
+    floating_pnl,
+
+    equity
+
+):
+
+    message = f"""
+
+📡 OPEN POSITIONS
+
+{open_count} OPEN
+
+💰 Floating:
+{floating_pnl:,.0f}
+
+💰 Equity:
+{equity:,.0f}
+
+"""
+
+    send_telegram_message(
+        message
+    )
