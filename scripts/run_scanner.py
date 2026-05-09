@@ -14,7 +14,6 @@ sys.path.append(
 )
 
 from app.scanner import run
-run()
 
 # =========================
 # RUN ENGINE
