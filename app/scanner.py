@@ -1,16 +1,43 @@
 import json
 import os
+import random
 
 
 def run():
 
     print("[SCANNER START]")
 
+    current_price = random.randint(
+
+        3200,
+
+        3400
+
+    )
+
+    pnl = random.randint(
+
+        -50000,
+
+        150000
+
+    )
+
+    floating_pnl = random.randint(
+
+        -100000,
+
+        300000
+
+    )
+
+    equity = 100000000 + floating_pnl
+
     live_data = {
 
-        "equity": 100021000,
+        "equity": equity,
 
-        "floating_pnl": 21000,
+        "floating_pnl": floating_pnl,
 
         "open_positions": [
 
@@ -22,9 +49,9 @@ def run():
 
                 "entry_price": 3310,
 
-                "current_price": 3260,
+                "current_price": current_price,
 
-                "pnl": 50000,
+                "pnl": pnl,
 
                 "sl": 3343,
 
@@ -37,8 +64,11 @@ def run():
     }
 
     os.makedirs(
+
         "data",
+
         exist_ok=True
+
     )
 
     with open(
