@@ -1,5 +1,12 @@
-print("[SCANNER START]")
+def run():
 
-print("[LIVE JSON UPDATED]")
+    print("[SCANNER START]")
 
-print("[SCANNER FINISHED]")
+    print("[LIVE JSON UPDATED]")
+
+    print("[SCANNER FINISHED]")
+
+
+if __name__ == "__main__":
+
+    run()
