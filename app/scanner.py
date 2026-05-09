@@ -7,6 +7,4 @@ def run():
     print("[SCANNER FINISHED]")
 
 
-if __name__ == "__main__":
 
-    run()
