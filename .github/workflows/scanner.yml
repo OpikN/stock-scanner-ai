@@ -1,19 +1,17 @@
 name: AI Scanner 24/7
 
 on:
+  workflow_dispatch:
+
   schedule:
     - cron: "*/5 * * * *"
 
-  workflow_dispatch:
-
 jobs:
   scanner:
-
     runs-on: ubuntu-latest
 
     steps:
-
-      - name: Checkout Repo
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -21,9 +19,9 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Dependencies
+      - name: Install Packages
         run: |
-          pip install yfinance pandas
+          pip install pandas yfinance
 
       - name: Run Scanner
         run: |
@@ -33,13 +31,13 @@ jobs:
         run: |
           cp data/live_data.json dashboard-next/public/live_data.json
 
-      - name: Commit JSON
+      - name: Commit Files
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
 
           git add .
 
-          git commit -m "auto update live json" || echo "no changes"
+          git commit -m "auto update" || echo "nothing to commit"
 
           git push
