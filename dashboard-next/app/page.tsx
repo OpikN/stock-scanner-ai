@@ -1,26 +1,34 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
+import {
+
+  useEffect,
+
+  useState
+
+} from "react"
 
 export default function Home() {
 
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<any>(null)
 
-  async function fetchData() {
+  async function loadData() {
 
     try {
 
       const res = await fetch(
-        "https://raw.githubusercontent.com/OpikN/stock-scanner-ai/main/data/live_data.json"
-      );
 
-      const json = await res.json();
+        "/live_data.json?t=" + Date.now()
 
-      setData(json);
+      )
+
+      const json = await res.json()
+
+      setData(json)
 
     } catch (err) {
 
-      console.log(err);
+      console.log(err)
 
     }
 
@@ -28,161 +36,178 @@ export default function Home() {
 
   useEffect(() => {
 
-    fetchData();
+    loadData()
 
-    const interval = setInterval(() => {
+    const interval = setInterval(
 
-      fetchData();
+      loadData,
 
-    }, 5000);
+      5000
 
-    return () => clearInterval(interval);
+    )
 
-  }, []);
+    return () => clearInterval(interval)
+
+  }, [])
+
+  if (!data) {
+
+    return (
+
+      <main className="p-10 text-white bg-black h-screen">
+
+        <h1 className="text-3xl">
+
+          📊 OPIK AI TERMINAL
+
+        </h1>
+
+        <p className="mt-4">
+
+          Loading...
+
+        </p>
+
+      </main>
+
+    )
+
+  }
 
   return (
 
-    <main className="min-h-screen bg-black text-white p-6">
+    <main className="min-h-screen bg-black text-green-400 p-10">
 
-      <h1 className="text-4xl font-bold mb-8">
+      <h1 className="text-4xl font-bold mb-10">
 
         📊 OPIK AI TERMINAL
 
       </h1>
 
-      {!data ? (
+      <div className="grid grid-cols-3 gap-6 mb-10">
 
-        <p>Loading...</p>
+        <div className="border border-green-500 p-6 rounded-xl">
 
-      ) : (
+          <h2 className="text-xl mb-2">
 
-        <div className="space-y-6">
+            Equity
 
-          <div className="grid grid-cols-3 gap-4">
+          </h2>
 
-            <div className="bg-zinc-900 p-4 rounded-2xl">
+          <p className="text-3xl font-bold">
 
-              <p className="text-zinc-400">
+            {data.equity.toLocaleString()}
 
-                Equity
-
-              </p>
-
-              <h2 className="text-3xl font-bold">
-
-                {data.equity?.toLocaleString()}
-
-              </h2>
-
-            </div>
-
-            <div className="bg-zinc-900 p-4 rounded-2xl">
-
-              <p className="text-zinc-400">
-
-                Floating PnL
-
-              </p>
-
-              <h2 className="text-3xl font-bold text-green-400">
-
-                {data.floating_pnl?.toLocaleString()}
-
-              </h2>
-
-            </div>
-
-            <div className="bg-zinc-900 p-4 rounded-2xl">
-
-              <p className="text-zinc-400">
-
-                Open Positions
-
-              </p>
-
-              <h2 className="text-3xl font-bold">
-
-                {data.open_positions}
-
-              </h2>
-
-            </div>
-
-          </div>
-
-          <div className="bg-zinc-900 p-4 rounded-2xl">
-
-            <h2 className="text-2xl font-bold mb-4">
-
-              📡 Live Positions
-
-            </h2>
-
-            <div className="space-y-4">
-
-              {data.positions?.map((p:any, i:number) => (
-
-                <div
-                  key={i}
-                  className="border border-zinc-700 p-4 rounded-xl"
-                >
-
-                  <div className="flex justify-between">
-
-                    <div>
-
-                      <h3 className="text-xl font-bold">
-
-                        {p.stock}
-
-                      </h3>
-
-                      <p>
-
-                        {p.side}
-
-                      </p>
-
-                    </div>
-
-                    <div className="text-right">
-
-                      <p>
-
-                        Entry: {p.entry}
-
-                      </p>
-
-                      <p>
-
-                        Current: {p.current}
-
-                      </p>
-
-                      <p className="text-green-400">
-
-                        PnL: {p.pnl}
-
-                      </p>
-
-                    </div>
-
-                  </div>
-
-                </div>
-
-              ))}
-
-            </div>
-
-          </div>
+          </p>
 
         </div>
 
-      )}
+        <div className="border border-green-500 p-6 rounded-xl">
+
+          <h2 className="text-xl mb-2">
+
+            Floating PnL
+
+          </h2>
+
+          <p className="text-3xl font-bold">
+
+            {data.floating_pnl.toLocaleString()}
+
+          </p>
+
+        </div>
+
+        <div className="border border-green-500 p-6 rounded-xl">
+
+          <h2 className="text-xl mb-2">
+
+            Open Positions
+
+          </h2>
+
+          <p className="text-3xl font-bold">
+
+            {data.open_positions.length}
+
+          </p>
+
+        </div>
+
+      </div>
+
+      <h2 className="text-2xl mb-6">
+
+        📡 Live Positions
+
+      </h2>
+
+      <div className="space-y-4">
+
+        {data.open_positions.map(
+
+          (pos: any, idx: number) => (
+
+            <div
+
+              key={idx}
+
+              className="border border-green-500 p-6 rounded-xl"
+
+            >
+
+              <h3 className="text-2xl font-bold">
+
+                {pos.stock}
+
+              </h3>
+
+              <p>
+
+                {pos.side}
+
+              </p>
+
+              <p>
+
+                Entry: {pos.entry_price}
+
+              </p>
+
+              <p>
+
+                Current: {pos.current_price}
+
+              </p>
+
+              <p>
+
+                PnL: {pos.pnl}
+
+              </p>
+
+              <p>
+
+                SL: {pos.sl}
+
+              </p>
+
+              <p>
+
+                TP1: {pos.tp1}
+
+              </p>
+
+            </div>
+
+          )
+
+        )}
+
+      </div>
 
     </main>
 
-  );
+  )
 
 }
