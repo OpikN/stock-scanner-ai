@@ -1,8 +1,8 @@
 {
-    "ema_fast": 4,
-    "ema_slow": 20,
-    "rsi_buy": 29,
-    "rsi_sell": 76,
+    "ema_fast": 7,
+    "ema_slow": 25,
+    "rsi_buy": 38,
+    "rsi_sell": 79,
     "score": 0,
     "trades": 0,
     "winrate": 0
