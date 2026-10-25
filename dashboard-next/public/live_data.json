@@ -1,13 +1,13 @@
 {
-    "equity": 100443414,
-    "floating_pnl": 198468,
+    "equity": 99702945,
+    "floating_pnl": 147774,
     "open_positions": [
         {
             "stock": "BBRI.JK",
             "side": "SELL",
             "entry_price": 3310,
-            "current_price": 3394,
-            "pnl": 32860,
+            "current_price": 3284,
+            "pnl": 70328,
             "sl": 3343,
             "tp1": 3243
         }
